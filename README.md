@@ -4,6 +4,16 @@ Below is the consolidated, implementation-ready spec that merges the original de
 
 ---
 
+## How to Run This Thing (Simple Mode)
+
+1. **Install Rust** – grab the stable toolchain via https://rustup.rs/ if you haven’t already, then run `rustup update` so `cargo` is ready.
+2. **Clone & enter the repo** – `git clone https://github.com/ericayto/PANARCHY.git && cd PANARCHY` (or unzip whatever folder you already have).
+3. **Run the default simulation** – `cargo run -- --ticks 90` starts the `tiny_island` scenario and drops snapshots into `snapshots/tiny_island/`.
+4. **Launch the live UI (optional but fun)** – `cargo run -- --ticks 120 --web --web-port 8080` and then open `http://localhost:8080` in a browser to watch the neon dashboard update in real time.
+5. **Need help?** Delete the `--ticks` flag to use scenario defaults, or pass `--scenario your_scenario.yaml` to point at another config.
+
+That’s it—no Docker, no extra services. If `cargo` complains, run `cargo clean` once and try again.
+
 ## 0. Current Implementation Status (Phase 4)
 
 Phase 4 keeps the deterministic Rust ECS core and adds a modern, animated observability UI. The CLI still executes the Environment → Infrastructure → Population → Economy → Finance → Policy → Technology → Bookkeeping loop with deterministic RNG streams, JSON snapshotting, banking/energy/policy systems, and now also streams every tick to a dark-themed web interface that renders KPIs, region chips, and pixel grids while the simulation runs.
