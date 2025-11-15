@@ -13,33 +13,72 @@ regions:
     annual_birth_rate: 0.012
     annual_death_rate: 0.009
     food_consumption_per_capita: 1.8
+    energy_consumption_per_capita: 1.3
     resources:
       food: 48000.0
       energy: 21000.0
     regen:
       food_per_1000: 62.0
       energy_per_1000: 28.0
+    economy:
+      food_productivity_per_worker: 3.0
+      energy_productivity_per_worker: 4.6
+      wage_per_worker: 125.0
+      target_inventory_days: 18.0
+      price_adjustment_rate: 0.05
+      wage_adjustment_rate: 0.025
+      food_price: 2.2
+      energy_price: 1.3
+      job_matching_efficiency: 0.93
+      basic_income_per_capita: 18.0
+      propensity_to_consume: 0.9
   - name: Highlands
     citizens: 17500
     employment_rate: 0.61
     annual_birth_rate: 0.011
     annual_death_rate: 0.008
     food_consumption_per_capita: 1.7
+    energy_consumption_per_capita: 1.1
     resources:
       food: 52000.0
       energy: 12000.0
     regen:
       food_per_1000: 78.0
       energy_per_1000: 16.0
+    economy:
+      food_productivity_per_worker: 3.4
+      energy_productivity_per_worker: 3.8
+      wage_per_worker: 115.0
+      target_inventory_days: 16.0
+      price_adjustment_rate: 0.045
+      wage_adjustment_rate: 0.02
+      food_price: 2.0
+      energy_price: 1.2
+      job_matching_efficiency: 0.9
+      basic_income_per_capita: 14.0
+      propensity_to_consume: 0.88
   - name: Research Atoll
     citizens: 12500
     employment_rate: 0.74
     annual_birth_rate: 0.010
     annual_death_rate: 0.007
     food_consumption_per_capita: 1.6
+    energy_consumption_per_capita: 1.5
     resources:
       food: 24000.0
       energy: 32000.0
     regen:
       food_per_1000: 54.0
       energy_per_1000: 45.0
+    economy:
+      food_productivity_per_worker: 2.8
+      energy_productivity_per_worker: 5.3
+      wage_per_worker: 140.0
+      target_inventory_days: 22.0
+      price_adjustment_rate: 0.035
+      wage_adjustment_rate: 0.03
+      food_price: 2.4
+      energy_price: 1.4
+      job_matching_efficiency: 0.95
+      basic_income_per_capita: 22.0
+      propensity_to_consume: 0.94

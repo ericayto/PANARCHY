@@ -25,7 +25,27 @@ pub struct PopulationComponent {
     pub annual_birth_rate: f64,
     pub annual_death_rate: f64,
     pub food_consumption_per_capita: f64,
+    pub energy_consumption_per_capita: f64,
     pub target_employment_rate: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EconomyComponent {
+    pub food_productivity_per_worker: f64,
+    pub energy_productivity_per_worker: f64,
+    pub wage: f64,
+    pub target_inventory_days: f64,
+    pub price_adjustment_rate: f64,
+    pub wage_adjustment_rate: f64,
+    pub job_matching_efficiency: f64,
+    pub basic_income_per_capita: f64,
+    pub propensity_to_consume: f64,
+    pub food_price: f64,
+    pub energy_price: f64,
+    pub labor_demand: f64,
+    pub household_budget: f64,
+    pub food_shortage_ratio: f64,
+    pub energy_shortage_ratio: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,8 +72,16 @@ pub struct RegionSnapshot {
     pub name: String,
     pub citizens: u64,
     pub employed: u64,
+    pub unemployment_rate: f64,
     pub food: f64,
     pub energy: f64,
+    pub wage: f64,
+    pub labor_demand: f64,
+    pub household_budget: f64,
+    pub food_price: f64,
+    pub energy_price: f64,
+    pub food_shortage_ratio: f64,
+    pub energy_shortage_ratio: f64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -73,6 +101,7 @@ pub struct World {
     dt_days: f64,
     pub(crate) regions: HashMap<EntityId, RegionComponent>,
     pub(crate) populations: HashMap<EntityId, PopulationComponent>,
+    pub(crate) economies: HashMap<EntityId, EconomyComponent>,
     pub(crate) resources: HashMap<EntityId, ResourceStock>,
     pub(crate) bookkeeping: BookkeepingState,
 }
@@ -86,6 +115,7 @@ impl World {
             dt_days,
             regions: HashMap::new(),
             populations: HashMap::new(),
+            economies: HashMap::new(),
             resources: HashMap::new(),
             bookkeeping: BookkeepingState::default(),
         }
@@ -95,11 +125,13 @@ impl World {
         &mut self,
         region: RegionComponent,
         population: PopulationComponent,
+        economy: EconomyComponent,
         resources: ResourceStock,
     ) -> EntityId {
         let id = self.allocate();
         self.regions.insert(id, region);
         self.populations.insert(id, population);
+        self.economies.insert(id, economy);
         self.resources.insert(id, resources);
         id
     }
@@ -132,14 +164,28 @@ impl World {
                 .populations
                 .get(id)
                 .expect("population component exists");
+            let economy = self.economies.get(id).expect("economy component exists");
             let stock = self.resources.get(id).expect("resource component exists");
+            let unemployment_rate = if population.citizens > 0 {
+                1.0 - (population.employed as f64 / population.citizens as f64)
+            } else {
+                0.0
+            };
             regions.push(RegionSnapshot {
                 id: id.raw(),
                 name: region.name.clone(),
                 citizens: population.citizens,
                 employed: population.employed,
+                unemployment_rate,
                 food: stock.food,
                 energy: stock.energy,
+                wage: economy.wage,
+                labor_demand: economy.labor_demand,
+                household_budget: economy.household_budget,
+                food_price: economy.food_price,
+                energy_price: economy.energy_price,
+                food_shortage_ratio: economy.food_shortage_ratio,
+                energy_shortage_ratio: economy.energy_shortage_ratio,
             });
         }
         regions.sort_by_key(|r| r.id);
@@ -153,6 +199,27 @@ impl World {
         }
     }
 
+    pub fn entity_ids(&self) -> Vec<EntityId> {
+        let mut ids: Vec<_> = self.regions.keys().cloned().collect();
+        ids.sort();
+        ids
+    }
+
+    pub fn economy(&self, id: EntityId) -> Option<&EconomyComponent> {
+        self.economies.get(&id)
+    }
+
+    pub fn economy_mut(&mut self, id: EntityId) -> Option<&mut EconomyComponent> {
+        self.economies.get_mut(&id)
+    }
+
+    pub fn resources_mut(&mut self, id: EntityId) -> Option<&mut ResourceStock> {
+        self.resources.get_mut(&id)
+    }
+
+    pub fn population(&self, id: EntityId) -> Option<&PopulationComponent> {
+        self.populations.get(&id)
+    }
     fn allocate(&mut self) -> EntityId {
         let id = EntityId(self.next_entity);
         self.next_entity += 1;

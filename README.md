@@ -4,17 +4,18 @@ Below is the consolidated, implementation-ready spec that merges the original de
 
 ---
 
-## 0. Current Implementation Status (Phase 0)
+## 0. Current Implementation Status (Phase 1)
 
-Phase 0 runs as a Rust crate with a deterministic ECS core, tick scheduler, RNG streams, JSON snapshotting, and the `tiny_island` scenario. The CLI executes the Environment → Population → Bookkeeping loop and writes snapshots to `snapshots/<scenario>/`.
+Phase 1 now runs as a Rust crate with deterministic ECS core, tick scheduler, RNG streams, JSON snapshotting, and the `tiny_island` scenario. The CLI executes the Environment → Population → Economy → Bookkeeping loop and writes snapshots to `snapshots/<scenario>/`.
 
 ### What was delivered
 
 1. **ECS + Scheduler** – Entities (regions) carry typed population and resource components that run through the ordered system pipeline (`src/systems/*`).
-2. **Deterministic RNG** – Each system consumes its own ChaCha8 stream (see `src/rng.rs`) so identical seeds reproduce runs exactly.
-3. **Scenario loader** – `scenarios/tiny_island.yaml` defines the 50k-person world, runtime defaults, and resource regeneration rates.
-4. **Snapshots** – `snapshots/SCENARIO/tick_XXXXXX.json` captures tick state in a simple Arrow/Parquet-ready JSON schema; the interval is configurable via CLI/YAML.
-5. **Tests** – `cargo test` exercises scenario parsing, deterministic ticks, and snapshot persistence.
+2. **Population + Labor Market** – The population system now consumes job postings from the economy, applies demographic flows, and applies starvation penalties based on unmet nutritional needs.
+3. **Simple Economy** – A posted-price economy system allocates labor to food/energy production, adjusts wages when labor demand diverges, and adapts prices when inventories fall below targets or demand surges.
+4. **Scenario loader** – `scenarios/tiny_island.yaml` defines the 50k-person world, runtime defaults, resource regeneration rates, and now per-region economic parameters (productivity, wages, price tuning).
+5. **Snapshots** – `snapshots/SCENARIO/tick_XXXXXX.json` captures tick state in a simple Arrow/Parquet-ready JSON schema expanded with wage, price, budget, and unemployment metrics.
+6. **Tests** – `cargo test` exercises scenario parsing, deterministic ticks, snapshot persistence, and Phase 1 economic behaviors (labor demand sensitivity + posted-price reaction to shortages).
 
 ### Try it locally
 
@@ -29,6 +30,28 @@ Run the automated checks with:
 ```bash
 cargo test
 ```
+
+### Scenario YAML additions
+
+Each region may now specify:
+
+```yaml
+energy_consumption_per_capita: 1.3         # daily kWh-equivalent need per person
+economy:
+  food_productivity_per_worker: 3.0        # units/day/worker
+  energy_productivity_per_worker: 4.6
+  wage_per_worker: 125.0                   # currency units/day
+  target_inventory_days: 18.0              # posted-price buffer
+  price_adjustment_rate: 0.05              # markup delta when short
+  wage_adjustment_rate: 0.025              # wage delta per tick
+  food_price: 2.2
+  energy_price: 1.3
+  job_matching_efficiency: 0.93            # share of posted jobs that fill each tick
+  basic_income_per_capita: 18.0            # safety net for unemployed
+  propensity_to_consume: 0.90              # share of disposable income spent
+```
+
+Defaults mirror the Phase 1 `tiny_island` scenario, so existing scenarios continue to parse even without specifying every field.
 
 ---
 
@@ -869,8 +892,7 @@ logging:
 
 ### Phase 1 – Population & Simple Economy
 
-* Implement population, jobs, basic production, and posted-price markets.
-* Validate demography and basic macro behavior.
+**Status:** ✅ Complete. The engine now simulates population flows, labor demand, basic production, and posted-price markets with wage/price adaptation plus starvation tracking.
 
 ### Phase 2 – Finance, Energy, & Infrastructure
 
