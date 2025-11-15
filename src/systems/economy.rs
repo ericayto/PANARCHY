@@ -55,12 +55,23 @@ impl System for EconomySystem {
                 Some(economy) => economy,
                 None => continue,
             };
+            let (power_capacity, transport_capacity) = world
+                .infrastructure
+                .get(&id)
+                .map(|infra| (infra.power_capacity, infra.transport_capacity))
+                .unwrap_or((f64::INFINITY, f64::INFINITY));
 
             if citizens <= 0.0 {
                 economy.labor_demand = 0.0;
                 economy.household_budget = 0.0;
                 economy.food_shortage_ratio = 0.0;
                 economy.energy_shortage_ratio = 0.0;
+                economy.energy_dispatched = 0.0;
+                economy.energy_curtailed = 0.0;
+                economy.transport_utilization = 0.0;
+                economy.transport_shortfall = 0.0;
+                economy.wage_bill = 0.0;
+                economy.sales_revenue = 0.0;
                 continue;
             }
 
@@ -90,7 +101,21 @@ impl System for EconomySystem {
             };
 
             stock.food += food_workers * per_worker_food;
-            stock.energy += energy_workers * per_worker_energy;
+            let energy_output = energy_workers * per_worker_energy;
+            let max_energy_dispatch = if power_capacity.is_finite() {
+                (power_capacity * dt).max(0.0)
+            } else {
+                f64::INFINITY
+            };
+            let energy_dispatched = if max_energy_dispatch.is_finite() {
+                energy_output.min(max_energy_dispatch)
+            } else {
+                energy_output
+            };
+            let curtailed_energy = (energy_output - energy_dispatched).max(0.0);
+            stock.energy += energy_dispatched;
+            economy.energy_dispatched = energy_dispatched;
+            economy.energy_curtailed = curtailed_energy;
 
             let wage_income = economy.wage * employed * dt;
             let unemployed = (citizens - employed).max(0.0);
@@ -98,6 +123,7 @@ impl System for EconomySystem {
             let mut budget = (wage_income + basic_income).max(0.0);
             budget *= economy.propensity_to_consume;
             economy.household_budget = budget;
+            economy.wage_bill = wage_income;
 
             let desired_cost =
                 desired_food * economy.food_price + desired_energy * economy.energy_price;
@@ -109,10 +135,41 @@ impl System for EconomySystem {
             let scaled_food_demand = desired_food * demand_scale;
             let scaled_energy_demand = desired_energy * demand_scale;
 
-            let sold_food = scaled_food_demand.min(stock.food);
+            let transport_capacity_per_tick = if transport_capacity.is_finite() {
+                (transport_capacity * dt).max(0.0)
+            } else {
+                f64::INFINITY
+            };
+            let total_dispatch = scaled_food_demand + scaled_energy_demand;
+            let transport_ratio = if transport_capacity_per_tick.is_finite()
+                && transport_capacity_per_tick < total_dispatch - EPS
+                && total_dispatch > EPS
+            {
+                (transport_capacity_per_tick / total_dispatch).clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
+            let deliverable_food = scaled_food_demand * transport_ratio;
+            let deliverable_energy = scaled_energy_demand * transport_ratio;
+
+            let sold_food = deliverable_food.min(stock.food);
             stock.food -= sold_food;
-            let sold_energy = scaled_energy_demand.min(stock.energy);
+            let sold_energy = deliverable_energy.min(stock.energy);
             stock.energy -= sold_energy;
+            let delivered_total = sold_food + sold_energy;
+            let transport_utilization =
+                if transport_capacity_per_tick.is_finite() && transport_capacity_per_tick > EPS {
+                    (delivered_total / transport_capacity_per_tick).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+            let transport_shortfall = if total_dispatch > EPS {
+                ((total_dispatch - delivered_total).max(0.0) / total_dispatch).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            economy.transport_utilization = transport_utilization;
+            economy.transport_shortfall = transport_shortfall;
 
             let food_shortage_ratio = if desired_food > EPS {
                 ((desired_food - sold_food).max(0.0) / desired_food).clamp(0.0, 1.0)
@@ -126,6 +183,8 @@ impl System for EconomySystem {
             };
             economy.food_shortage_ratio = food_shortage_ratio;
             economy.energy_shortage_ratio = energy_shortage_ratio;
+            economy.sales_revenue =
+                sold_food * economy.food_price + sold_energy * economy.energy_price;
 
             adjust_price(
                 &mut economy.food_price,

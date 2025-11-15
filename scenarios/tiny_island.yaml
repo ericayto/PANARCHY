@@ -32,6 +32,20 @@ regions:
       job_matching_efficiency: 0.93
       basic_income_per_capita: 18.0
       propensity_to_consume: 0.9
+    finance:
+      initial_deposits: 8500000.0
+      initial_loans: 2200000.0
+      policy_rate: 0.022
+      loan_rate_spread: 0.018
+      deposit_rate: 0.012
+      default_rate: 0.015
+      target_loan_to_deposit: 0.95
+      infrastructure_spend_fraction: 0.14
+    infrastructure:
+      power_capacity: 70000.0
+      transport_capacity: 86000.0
+      maintenance_cost: 15000.0
+      degradation_rate: 0.0035
   - name: Highlands
     citizens: 17500
     employment_rate: 0.61
@@ -57,6 +71,20 @@ regions:
       job_matching_efficiency: 0.9
       basic_income_per_capita: 14.0
       propensity_to_consume: 0.88
+    finance:
+      initial_deposits: 6400000.0
+      initial_loans: 1800000.0
+      policy_rate: 0.021
+      loan_rate_spread: 0.02
+      deposit_rate: 0.011
+      default_rate: 0.013
+      target_loan_to_deposit: 0.9
+      infrastructure_spend_fraction: 0.12
+    infrastructure:
+      power_capacity: 62000.0
+      transport_capacity: 79000.0
+      maintenance_cost: 13000.0
+      degradation_rate: 0.003
   - name: Research Atoll
     citizens: 12500
     employment_rate: 0.74
@@ -82,3 +110,17 @@ regions:
       job_matching_efficiency: 0.95
       basic_income_per_capita: 22.0
       propensity_to_consume: 0.94
+    finance:
+      initial_deposits: 7200000.0
+      initial_loans: 1600000.0
+      policy_rate: 0.023
+      loan_rate_spread: 0.017
+      deposit_rate: 0.013
+      default_rate: 0.014
+      target_loan_to_deposit: 0.92
+      infrastructure_spend_fraction: 0.16
+    infrastructure:
+      power_capacity: 68000.0
+      transport_capacity: 81000.0
+      maintenance_cost: 14000.0
+      degradation_rate: 0.0032

@@ -6,7 +6,10 @@ use std::{
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
-use crate::world::{EconomyComponent, PopulationComponent, RegionComponent, ResourceStock, World};
+use crate::world::{
+    EconomyComponent, FinanceComponent, InfrastructureComponent, PopulationComponent,
+    RegionComponent, ResourceStock, World,
+};
 
 fn default_dt_days() -> f64 {
     1.0
@@ -88,6 +91,54 @@ fn default_propensity_to_consume() -> f64 {
     0.9
 }
 
+fn default_initial_deposits() -> f64 {
+    5_000_000.0
+}
+
+fn default_initial_loans() -> f64 {
+    0.0
+}
+
+fn default_policy_rate() -> f64 {
+    0.02
+}
+
+fn default_loan_rate_spread() -> f64 {
+    0.02
+}
+
+fn default_deposit_rate() -> f64 {
+    0.01
+}
+
+fn default_default_rate() -> f64 {
+    0.01
+}
+
+fn default_target_loan_to_deposit() -> f64 {
+    0.9
+}
+
+fn default_infrastructure_spend_fraction() -> f64 {
+    0.12
+}
+
+fn default_power_capacity() -> f64 {
+    65_000.0
+}
+
+fn default_transport_capacity() -> f64 {
+    75_000.0
+}
+
+fn default_infrastructure_maintenance_cost() -> f64 {
+    12_000.0
+}
+
+fn default_infrastructure_degradation_rate() -> f64 {
+    0.003
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Scenario {
     pub name: String,
@@ -121,6 +172,10 @@ pub struct ScenarioRegion {
     pub regen: ResourceRegen,
     #[serde(default)]
     pub economy: ScenarioEconomy,
+    #[serde(default)]
+    pub finance: ScenarioFinance,
+    #[serde(default)]
+    pub infrastructure: ScenarioInfrastructure,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -190,6 +245,64 @@ impl Default for ScenarioEconomy {
     }
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct ScenarioFinance {
+    #[serde(default = "default_initial_deposits")]
+    pub initial_deposits: f64,
+    #[serde(default = "default_initial_loans")]
+    pub initial_loans: f64,
+    #[serde(default = "default_policy_rate")]
+    pub policy_rate: f64,
+    #[serde(default = "default_loan_rate_spread")]
+    pub loan_rate_spread: f64,
+    #[serde(default = "default_deposit_rate")]
+    pub deposit_rate: f64,
+    #[serde(default = "default_default_rate")]
+    pub default_rate: f64,
+    #[serde(default = "default_target_loan_to_deposit")]
+    pub target_loan_to_deposit: f64,
+    #[serde(default = "default_infrastructure_spend_fraction")]
+    pub infrastructure_spend_fraction: f64,
+}
+
+impl Default for ScenarioFinance {
+    fn default() -> Self {
+        Self {
+            initial_deposits: default_initial_deposits(),
+            initial_loans: default_initial_loans(),
+            policy_rate: default_policy_rate(),
+            loan_rate_spread: default_loan_rate_spread(),
+            deposit_rate: default_deposit_rate(),
+            default_rate: default_default_rate(),
+            target_loan_to_deposit: default_target_loan_to_deposit(),
+            infrastructure_spend_fraction: default_infrastructure_spend_fraction(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ScenarioInfrastructure {
+    #[serde(default = "default_power_capacity")]
+    pub power_capacity: f64,
+    #[serde(default = "default_transport_capacity")]
+    pub transport_capacity: f64,
+    #[serde(default = "default_infrastructure_maintenance_cost")]
+    pub maintenance_cost: f64,
+    #[serde(default = "default_infrastructure_degradation_rate")]
+    pub degradation_rate: f64,
+}
+
+impl Default for ScenarioInfrastructure {
+    fn default() -> Self {
+        Self {
+            power_capacity: default_power_capacity(),
+            transport_capacity: default_transport_capacity(),
+            maintenance_cost: default_infrastructure_maintenance_cost(),
+            degradation_rate: default_infrastructure_degradation_rate(),
+        }
+    }
+}
+
 pub struct ScenarioLoader {
     base_dir: PathBuf,
 }
@@ -248,12 +361,45 @@ impl Scenario {
                 household_budget: 0.0,
                 food_shortage_ratio: 0.0,
                 energy_shortage_ratio: 0.0,
+                wage_bill: 0.0,
+                sales_revenue: 0.0,
+                energy_dispatched: 0.0,
+                energy_curtailed: 0.0,
+                transport_utilization: 0.0,
+                transport_shortfall: 0.0,
             };
             let stock = ResourceStock {
                 food: region.resources.food,
                 energy: region.resources.energy,
             };
-            world.spawn_region(region_component, population, economy, stock);
+            let finance = FinanceComponent {
+                bank_deposits: region.finance.initial_deposits,
+                loan_balance: region.finance.initial_loans,
+                policy_rate: region.finance.policy_rate,
+                loan_rate_spread: region.finance.loan_rate_spread,
+                deposit_rate: region.finance.deposit_rate,
+                default_rate: region.finance.default_rate,
+                target_loan_to_deposit: region.finance.target_loan_to_deposit,
+                infrastructure_spend_fraction: region.finance.infrastructure_spend_fraction,
+                credit_stress: 0.0,
+                cumulative_defaults: 0.0,
+            };
+            let infrastructure = InfrastructureComponent {
+                power_capacity: region.infrastructure.power_capacity,
+                transport_capacity: region.infrastructure.transport_capacity,
+                maintenance_cost: region.infrastructure.maintenance_cost,
+                degradation_rate: region.infrastructure.degradation_rate,
+                reliability: 1.0,
+                pending_investment: 0.0,
+            };
+            world.spawn_region(
+                region_component,
+                population,
+                economy,
+                stock,
+                finance,
+                infrastructure,
+            );
         }
         world
     }

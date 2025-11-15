@@ -46,6 +46,12 @@ pub struct EconomyComponent {
     pub household_budget: f64,
     pub food_shortage_ratio: f64,
     pub energy_shortage_ratio: f64,
+    pub wage_bill: f64,
+    pub sales_revenue: f64,
+    pub energy_dispatched: f64,
+    pub energy_curtailed: f64,
+    pub transport_utilization: f64,
+    pub transport_shortfall: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,6 +65,30 @@ impl ResourceStock {
         self.food = self.food.max(0.0);
         self.energy = self.energy.max(0.0);
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FinanceComponent {
+    pub bank_deposits: f64,
+    pub loan_balance: f64,
+    pub policy_rate: f64,
+    pub loan_rate_spread: f64,
+    pub deposit_rate: f64,
+    pub default_rate: f64,
+    pub target_loan_to_deposit: f64,
+    pub infrastructure_spend_fraction: f64,
+    pub credit_stress: f64,
+    pub cumulative_defaults: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InfrastructureComponent {
+    pub power_capacity: f64,
+    pub transport_capacity: f64,
+    pub maintenance_cost: f64,
+    pub degradation_rate: f64,
+    pub reliability: f64,
+    pub pending_investment: f64,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -82,6 +112,12 @@ pub struct RegionSnapshot {
     pub energy_price: f64,
     pub food_shortage_ratio: f64,
     pub energy_shortage_ratio: f64,
+    pub bank_deposits: f64,
+    pub loan_balance: f64,
+    pub credit_stress: f64,
+    pub power_capacity: f64,
+    pub transport_capacity: f64,
+    pub infrastructure_reliability: f64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -103,6 +139,8 @@ pub struct World {
     pub(crate) populations: HashMap<EntityId, PopulationComponent>,
     pub(crate) economies: HashMap<EntityId, EconomyComponent>,
     pub(crate) resources: HashMap<EntityId, ResourceStock>,
+    pub(crate) finances: HashMap<EntityId, FinanceComponent>,
+    pub(crate) infrastructure: HashMap<EntityId, InfrastructureComponent>,
     pub(crate) bookkeeping: BookkeepingState,
 }
 
@@ -117,6 +155,8 @@ impl World {
             populations: HashMap::new(),
             economies: HashMap::new(),
             resources: HashMap::new(),
+            finances: HashMap::new(),
+            infrastructure: HashMap::new(),
             bookkeeping: BookkeepingState::default(),
         }
     }
@@ -127,12 +167,16 @@ impl World {
         population: PopulationComponent,
         economy: EconomyComponent,
         resources: ResourceStock,
+        finance: FinanceComponent,
+        infrastructure: InfrastructureComponent,
     ) -> EntityId {
         let id = self.allocate();
         self.regions.insert(id, region);
         self.populations.insert(id, population);
         self.economies.insert(id, economy);
         self.resources.insert(id, resources);
+        self.finances.insert(id, finance);
+        self.infrastructure.insert(id, infrastructure);
         id
     }
 
@@ -166,6 +210,8 @@ impl World {
                 .expect("population component exists");
             let economy = self.economies.get(id).expect("economy component exists");
             let stock = self.resources.get(id).expect("resource component exists");
+            let finance = self.finances.get(id);
+            let infra = self.infrastructure.get(id);
             let unemployment_rate = if population.citizens > 0 {
                 1.0 - (population.employed as f64 / population.citizens as f64)
             } else {
@@ -186,6 +232,12 @@ impl World {
                 energy_price: economy.energy_price,
                 food_shortage_ratio: economy.food_shortage_ratio,
                 energy_shortage_ratio: economy.energy_shortage_ratio,
+                bank_deposits: finance.map(|f| f.bank_deposits).unwrap_or(0.0),
+                loan_balance: finance.map(|f| f.loan_balance).unwrap_or(0.0),
+                credit_stress: finance.map(|f| f.credit_stress).unwrap_or(0.0),
+                power_capacity: infra.map(|i| i.power_capacity).unwrap_or(0.0),
+                transport_capacity: infra.map(|i| i.transport_capacity).unwrap_or(0.0),
+                infrastructure_reliability: infra.map(|i| i.reliability).unwrap_or(0.0),
             });
         }
         regions.sort_by_key(|r| r.id);
@@ -219,6 +271,22 @@ impl World {
 
     pub fn population(&self, id: EntityId) -> Option<&PopulationComponent> {
         self.populations.get(&id)
+    }
+
+    pub fn finance(&self, id: EntityId) -> Option<&FinanceComponent> {
+        self.finances.get(&id)
+    }
+
+    pub fn finance_mut(&mut self, id: EntityId) -> Option<&mut FinanceComponent> {
+        self.finances.get_mut(&id)
+    }
+
+    pub fn infrastructure(&self, id: EntityId) -> Option<&InfrastructureComponent> {
+        self.infrastructure.get(&id)
+    }
+
+    pub fn infrastructure_mut(&mut self, id: EntityId) -> Option<&mut InfrastructureComponent> {
+        self.infrastructure.get_mut(&id)
     }
     fn allocate(&mut self) -> EntityId {
         let id = EntityId(self.next_entity);

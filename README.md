@@ -4,9 +4,9 @@ Below is the consolidated, implementation-ready spec that merges the original de
 
 ---
 
-## 0. Current Implementation Status (Phase 1)
+## 0. Current Implementation Status (Phase 2)
 
-Phase 1 now runs as a Rust crate with deterministic ECS core, tick scheduler, RNG streams, JSON snapshotting, and the `tiny_island` scenario. The CLI executes the Environment → Population → Economy → Bookkeeping loop and writes snapshots to `snapshots/<scenario>/`.
+Phase 2 now runs end-to-end as a Rust crate with deterministic ECS core, tick scheduler, RNG streams, JSON snapshotting, and the `tiny_island` scenario. The CLI executes the Environment → Infrastructure → Population → Economy → Finance → Bookkeeping loop, wiring in basic banking, loans, energy dispatch, and transport constraints before writing snapshots to `snapshots/<scenario>/`.
 
 ### What was delivered
 
@@ -16,6 +16,8 @@ Phase 1 now runs as a Rust crate with deterministic ECS core, tick scheduler, RN
 4. **Scenario loader** – `scenarios/tiny_island.yaml` defines the 50k-person world, runtime defaults, resource regeneration rates, and now per-region economic parameters (productivity, wages, price tuning).
 5. **Snapshots** – `snapshots/SCENARIO/tick_XXXXXX.json` captures tick state in a simple Arrow/Parquet-ready JSON schema expanded with wage, price, budget, and unemployment metrics.
 6. **Tests** – `cargo test` exercises scenario parsing, deterministic ticks, snapshot persistence, and Phase 1 economic behaviors (labor demand sensitivity + posted-price reaction to shortages).
+7. **Finance & Banking** – The new `FinanceSystem` tracks per-region deposits, loan balances, interest accrual, credit stress, defaults, and infrastructure investment flows that are sensitive to shortages and transport jams.
+8. **Energy Dispatch & Infrastructure** – `InfrastructureSystem` now degrades and upgrades power/transport capacity based on maintenance spend and investments, feeds back into the economy via dispatch limits, and reports reliability plus shortfall signals in both runtime metrics and JSON snapshots.
 
 ### Try it locally
 
@@ -49,9 +51,23 @@ economy:
   job_matching_efficiency: 0.93            # share of posted jobs that fill each tick
   basic_income_per_capita: 18.0            # safety net for unemployed
   propensity_to_consume: 0.90              # share of disposable income spent
+finance:
+  initial_deposits: 8_500_000.0            # household + firm deposits managed by the bank
+  initial_loans: 2_200_000.0               # outstanding credit at tick 0
+  policy_rate: 0.022                       # base policy rate that loans build upon
+  loan_rate_spread: 0.018                  # local bank spread vs. policy rate
+  deposit_rate: 0.012                      # savings rate for deposits
+  default_rate: 0.015                      # baseline default share per year
+  target_loan_to_deposit: 0.95             # liquidity preference
+  infrastructure_spend_fraction: 0.14      # share of surplus cash funneled to infra
+infrastructure:
+  power_capacity: 70000.0                  # max daily energy dispatch
+  transport_capacity: 86000.0              # max daily goods delivered to households
+  maintenance_cost: 15000.0                # burn per tick to keep assets running
+  degradation_rate: 0.0035                 # structural wear per day
 ```
 
-Defaults mirror the Phase 1 `tiny_island` scenario, so existing scenarios continue to parse even without specifying every field.
+Defaults mirror the upgraded `tiny_island` scenario, so existing scenarios continue to parse even without specifying every new field.
 
 ---
 
@@ -896,7 +912,11 @@ logging:
 
 ### Phase 2 – Finance, Energy, & Infrastructure
 
-* Add banking, loans, basic energy dispatch, transport.
+**Status:** ✅ Complete. Per-region banks now manage deposits, loans, defaults, and policy-rate spreads while feeding infrastructure investment queues. Power and transport capacity degrade over time, require maintenance financed by the bank, and limit both energy dispatch and household deliveries, with reliability metrics logged to snapshots.
+
+* Banking feedback loops with adjustable policy rate, spreads, and liquidity targets.
+* Infrastructure capacity tied to maintenance spend, degradation, and investments funded from financial surpluses.
+* Economy system honors power/transport limits, surfacing shortages/curtailment to both finance and infrastructure subsystems.
 * Target: `laptop_small` ≤ 400 ms/tick.
 
 ### Phase 3 – Tech & Policy

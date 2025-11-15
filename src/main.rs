@@ -6,7 +6,10 @@ use clap::Parser;
 use panarchy::{
     engine::{EngineBuilder, EngineSettings},
     scenario::ScenarioLoader,
-    systems::{BookkeepingSystem, EconomySystem, EnvironmentSystem, PopulationSystem},
+    systems::{
+        BookkeepingSystem, EconomySystem, EnvironmentSystem, FinanceSystem, InfrastructureSystem,
+        PopulationSystem,
+    },
 };
 
 #[derive(Debug, Parser)]
@@ -51,8 +54,10 @@ fn main() -> Result<()> {
 
     let mut engine = EngineBuilder::new(settings)
         .with_system(EnvironmentSystem::new())
+        .with_system(InfrastructureSystem::new())
         .with_system(PopulationSystem::new())
         .with_system(EconomySystem::new())
+        .with_system(FinanceSystem::new())
         .with_system(BookkeepingSystem::new())
         .build();
 

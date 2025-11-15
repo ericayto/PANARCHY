@@ -3,7 +3,10 @@ use std::path::PathBuf;
 use panarchy::{
     engine::{EngineBuilder, EngineSettings},
     scenario::ScenarioLoader,
-    systems::{BookkeepingSystem, EconomySystem, EnvironmentSystem, PopulationSystem},
+    systems::{
+        BookkeepingSystem, EconomySystem, EnvironmentSystem, FinanceSystem, InfrastructureSystem,
+        PopulationSystem,
+    },
 };
 
 fn scenario_loader() -> ScenarioLoader {
@@ -23,8 +26,10 @@ fn build_engine(seed: u64, snapshot_dir: PathBuf, snapshot_interval: u64) -> Eng
     };
     EngineBuilder::new(settings)
         .with_system(EnvironmentSystem::new())
+        .with_system(InfrastructureSystem::new())
         .with_system(PopulationSystem::new())
         .with_system(EconomySystem::new())
+        .with_system(FinanceSystem::new())
         .with_system(BookkeepingSystem::new())
 }
 
