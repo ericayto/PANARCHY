@@ -22,6 +22,28 @@ const selectors = {
 const cityCanvas = document.getElementById('city-canvas');
 const cityCtx = cityCanvas.getContext('2d');
 
+const spriteSources = {
+  ground: '/sprites/terrain_grass.png',
+  soil: '/sprites/terrain_mud.png',
+  water: '/sprites/water.png',
+  road: '/sprites/road.png',
+  residential: '/sprites/residential.png',
+  commercial: '/sprites/commercial.png',
+  industrial: '/sprites/industrial.png',
+  park: '/sprites/park.png',
+};
+
+const cityState = {
+  tileSize: 48,
+  cols: 28,
+  rows: 18,
+  grid: [],
+  sprites: {},
+  ready: false,
+  cars: [],
+  loopLength: 1,
+};
+
 const state = {
   frames: [],
   totalTicks: 0,
@@ -30,57 +52,85 @@ const state = {
     index: 0,
     playing: true,
     speed: 1,
-    baseInterval: 600,
+    baseInterval: 650,
     accumulator: 0,
     lastTimestamp: 0,
   },
   lastLoggedTick: 0,
-  cars: [],
-  houses: [],
-  skyline: [],
 };
 
 let eventSource;
 
 init();
 
-function init() {
+async function init() {
+  await preloadSprites();
+  configureCanvas();
   setupPlaybackControls();
-  setupCityLayout();
-  fetchInitialFrameData();
+  await bootstrap();
   startEventStream();
-  requestAnimationFrame(playbackLoop);
   window.addEventListener('resize', resizeCanvas);
   resizeCanvas();
+  requestAnimationFrame(playbackLoop);
+}
+
+async function preloadSprites() {
+  const entries = Object.entries(spriteSources);
+  const resolved = await Promise.all(
+    entries.map(([key, src]) =>
+      loadImage(src).then((img) => [key, img])
+    )
+  );
+  resolved.forEach(([key, img]) => {
+    cityState.sprites[key] = img;
+  });
+  cityState.ready = true;
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.decoding = 'async';
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+function configureCanvas() {
+  cityCanvas.width = cityState.cols * cityState.tileSize;
+  cityCanvas.height = cityState.rows * cityState.tileSize;
+  cityState.grid = createGrid('ground');
+  drawCityScene();
 }
 
 function setupPlaybackControls() {
   selectors.playToggle.addEventListener('click', () => {
     state.playback.playing = !state.playback.playing;
     selectors.playToggle.textContent = state.playback.playing ? 'Pause' : 'Play';
-    setStatus(state.playback.playing ? 'streaming' : 'paused');
+    updateStatus(state.playback.playing ? 'streaming' : 'paused');
   });
   selectors.speedUp.addEventListener('click', () => adjustSpeed(1));
   selectors.speedDown.addEventListener('click', () => adjustSpeed(-1));
   selectors.timelineSlider.addEventListener('input', (event) => {
-    state.playback.index = Number(event.target.value);
+    const nextIndex = Number(event.target.value);
+    state.playback.index = nextIndex;
     state.playback.playing = false;
     selectors.playToggle.textContent = 'Play';
-    renderFrame(state.frames[state.playback.index]);
+    renderFrame(state.frames[nextIndex]);
   });
 }
 
 function adjustSpeed(delta) {
   const allowed = [0.25, 0.5, 1, 2, 4, 8];
-  const current = state.playback.speed;
-  let idx = allowed.indexOf(current);
+  let idx = allowed.indexOf(state.playback.speed);
   if (idx === -1) idx = allowed.indexOf(1);
   idx = Math.min(allowed.length - 1, Math.max(0, idx + delta));
   state.playback.speed = allowed[idx];
   selectors.speedLabel.textContent = `${allowed[idx]}x`;
 }
 
-async function fetchInitialFrameData() {
+async function bootstrap() {
   try {
     const [stateResp, framesResp] = await Promise.all([
       fetch('/api/state'),
@@ -90,8 +140,8 @@ async function fetchInitialFrameData() {
       const info = await stateResp.json();
       selectors.scenario.textContent = info.scenario || 'Unknown world';
       state.totalTicks = info.total_ticks || 0;
-      selectors.timelineSlider.max = info.total_ticks || 0;
-      selectors.timelineLabel.textContent = `Tick 0 / ${info.total_ticks || 0}`;
+      selectors.timelineSlider.max = state.totalTicks || 0;
+      selectors.timelineLabel.textContent = `Tick 0 / ${state.totalTicks}`;
       updateStatus(info.completed ? 'complete' : 'warming');
     }
     if (framesResp.ok) {
@@ -105,25 +155,21 @@ async function fetchInitialFrameData() {
     }
   } catch (err) {
     console.error(err);
-    setTimeout(fetchInitialFrameData, 3000);
+    setTimeout(bootstrap, 3000);
   }
 }
 
 function startEventStream() {
-  if (eventSource) {
-    eventSource.close();
-  }
+  if (eventSource) eventSource.close();
   eventSource = new EventSource('/api/events');
   eventSource.onmessage = (event) => {
     try {
       const frame = JSON.parse(event.data);
       state.frames.push(frame);
-      if (state.frames.length > state.totalTicks) {
-        selectors.timelineSlider.max = state.frames.length;
-      }
       if (state.playback.playing) {
         state.playback.index = state.frames.length - 1;
       }
+      selectors.timelineSlider.max = Math.max(state.totalTicks, state.frames.length - 1);
       renderFrame(frame);
     } catch (err) {
       console.error('Failed to parse frame', err);
@@ -162,7 +208,7 @@ function advanceFrame() {
 }
 
 function renderFrame(frame) {
-  if (!frame) return;
+  if (!frame || !frame.snapshot) return;
   const snap = frame.snapshot;
   selectors.tick.textContent = formatNumber(snap.tick);
   selectors.days.textContent = snap.days_elapsed.toFixed(1);
@@ -177,7 +223,10 @@ function renderFrame(frame) {
   selectors.reliability.textContent = formatPercent(aggregates.reliability);
   selectors.stress.textContent = formatPercent(aggregates.stress);
 
-  drawCityScene(snap, aggregates);
+  if (cityState.ready) {
+    rebuildCityTiles(snap);
+    drawCityScene();
+  }
   updateRegions(snap.regions);
   processLogs(snap);
 }
@@ -188,19 +237,199 @@ function aggregateMetrics(snapshot) {
       acc.employment += 1 - region.unemployment_rate;
       acc.reliability += region.infrastructure_reliability;
       acc.stress += region.credit_stress;
-      acc.food += region.food_shortage_ratio;
-      acc.energy += region.energy_shortage_ratio;
+      acc.shortage += region.food_shortage_ratio + region.energy_shortage_ratio;
       return acc;
     },
-    { employment: 0, reliability: 0, stress: 0, food: 0, energy: 0 }
+    { employment: 0, reliability: 0, stress: 0, shortage: 0 }
   );
   const count = Math.max(snapshot.regions.length, 1);
   return {
     employment: totals.employment / count,
     reliability: totals.reliability / count,
     stress: totals.stress / count,
-    shortage: (totals.food + totals.energy) / (2 * count),
+    shortage: totals.shortage / (2 * count),
   };
+}
+
+function rebuildCityTiles(snapshot) {
+  const grid = createGrid('ground');
+  const rows = cityState.rows;
+  const cols = cityState.cols;
+  // waterway band
+  for (let r = 2; r < 5; r += 1) {
+    for (let c = 0; c < cols; c += 1) {
+      grid[r][c].sprite = 'water';
+    }
+  }
+  // soil diagonal accent
+  for (let i = 0; i < Math.min(rows, cols); i += 1) {
+    const r = rows - 1 - i;
+    const c = i;
+    if (grid[r] && grid[r][c]) {
+      grid[r][c].sprite = 'soil';
+    }
+  }
+  const midRow = Math.floor(rows / 2);
+  const midCol = Math.floor(cols / 2);
+  for (let c = 0; c < cols; c += 1) {
+    grid[midRow][c].sprite = 'road';
+  }
+  for (let r = 0; r < rows; r += 1) {
+    grid[r][midCol].sprite = 'road';
+  }
+  const nodes = computeRegionNodes(snapshot.regions.length);
+  nodes.forEach((node) => carveCorridor(grid, node.x, node.y, midCol, midRow));
+  nodes.forEach((node, idx) => layDistrict(grid, node, snapshot.regions[idx]));
+  cityState.grid = grid;
+  if (!cityState.cars.length) {
+    initCars();
+  }
+}
+
+function createGrid(fillSprite) {
+  return Array.from({ length: cityState.rows }, () =>
+    Array.from({ length: cityState.cols }, () => ({ sprite: fillSprite }))
+  );
+}
+
+function computeRegionNodes(count) {
+  if (!count) return [];
+  const nodes = [];
+  const radius = Math.min(cityState.cols, cityState.rows) * 0.35;
+  for (let i = 0; i < count; i += 1) {
+    const angle = (i / count) * Math.PI * 2;
+    const x = Math.round(cityState.cols / 2 + radius * Math.cos(angle));
+    const y = Math.round(cityState.rows / 2 + radius * Math.sin(angle));
+    nodes.push({
+      x: clamp(Math.min(cityState.cols - 4, x), 3, cityState.cols - 4),
+      y: clamp(Math.min(cityState.rows - 4, y), 3, cityState.rows - 4),
+    });
+  }
+  return nodes;
+}
+
+function carveCorridor(grid, x, y, midCol, midRow) {
+  let cx = x;
+  let cy = y;
+  while (cx !== midCol) {
+    grid[cy][cx].sprite = 'road';
+    cx += cx < midCol ? 1 : -1;
+  }
+  while (cy !== midRow) {
+    grid[cy][cx].sprite = 'road';
+    cy += cy < midRow ? 1 : -1;
+  }
+}
+
+function layDistrict(grid, node, region) {
+  const palette = districtPalette(region);
+  let index = 0;
+  for (let dy = -1; dy <= 1; dy += 1) {
+    for (let dx = -1; dx <= 1; dx += 1) {
+      const sprite = palette[Math.min(palette.length - 1, index)];
+      setTile(grid, node.x + dx, node.y + dy, sprite);
+      index += 1;
+    }
+  }
+  for (let dx = -2; dx <= 2; dx += 1) {
+    setTile(grid, node.x + dx, node.y - 2, 'road');
+    setTile(grid, node.x + dx, node.y + 2, 'road');
+  }
+  for (let dy = -2; dy <= 2; dy += 1) {
+    setTile(grid, node.x - 2, node.y + dy, 'road');
+    setTile(grid, node.x + 2, node.y + dy, 'road');
+  }
+}
+
+function districtPalette(region) {
+  const palette = ['residential'];
+  if (region.household_budget > region.citizens * 1.2) {
+    palette.push('commercial');
+  }
+  if (region.energy_shortage_ratio > 0.12 || region.energy_curtailed > 500) {
+    palette.push('industrial');
+  }
+  if (region.policy_approval > 0.6 || region.budget_balance > 0) {
+    palette.push('park');
+  }
+  while (palette.length < 4) {
+    palette.push(palette[palette.length - 1] || 'residential');
+  }
+  return palette;
+}
+
+function setTile(grid, x, y, sprite) {
+  if (y < 0 || y >= cityState.rows) return;
+  if (x < 0 || x >= cityState.cols) return;
+  grid[y][x].sprite = sprite;
+}
+
+function drawCityScene() {
+  const ctx = cityCtx;
+  const width = cityCanvas.width;
+  const height = cityCanvas.height;
+  const tileSize = cityState.tileSize;
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = '#050505';
+  ctx.fillRect(0, 0, width, height);
+  for (let row = 0; row < cityState.rows; row += 1) {
+    for (let col = 0; col < cityState.cols; col += 1) {
+      const tile = cityState.grid[row][col];
+      const sprite = cityState.sprites[tile.sprite];
+      if (sprite) {
+        ctx.drawImage(sprite, col * tileSize, row * tileSize, tileSize, tileSize);
+      }
+    }
+  }
+  drawCars(ctx);
+}
+
+function initCars() {
+  const width = cityState.cols * cityState.tileSize;
+  const height = cityState.rows * cityState.tileSize;
+  cityState.loopLength = 2 * (width + height);
+  cityState.cars = Array.from({ length: 24 }, () => ({
+    progress: Math.random(),
+    speed: 0.02 + Math.random() * 0.05,
+  }));
+}
+
+function animateCity(delta) {
+  if (!cityState.cars.length) return;
+  cityState.cars.forEach((car) => {
+    car.progress = (car.progress + (delta / 1000) * car.speed) % 1;
+  });
+}
+
+function drawCars(ctx) {
+  if (!cityState.cars.length) return;
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  cityState.cars.forEach((car) => {
+    const pos = positionAlongLoop(car.progress);
+    ctx.fillRect(pos.x, pos.y, 6, 6);
+  });
+  ctx.restore();
+}
+
+function positionAlongLoop(progress) {
+  const width = cityState.cols * cityState.tileSize;
+  const height = cityState.rows * cityState.tileSize;
+  const perimeter = 2 * (width + height);
+  let distance = progress * perimeter;
+  if (distance < width) {
+    return { x: distance, y: Math.max(4, height / 2 - 8) };
+  }
+  distance -= width;
+  if (distance < height) {
+    return { x: width / 2 + 8, y: distance };
+  }
+  distance -= height;
+  if (distance < width) {
+    return { x: width - distance, y: height / 2 + 8 };
+  }
+  distance -= width;
+  return { x: width / 2 - 8, y: height - distance };
 }
 
 function updateRegions(regions) {
@@ -253,43 +482,28 @@ function processLogs(snapshot) {
   if (snapshot.tick <= state.lastLoggedTick) return;
   const logs = [];
   if (snapshot.starving_regions.length) {
-    logs.push({
-      type: 'alert',
-      text: `Food stress: ${snapshot.starving_regions.join(', ')}`,
-    });
+    logs.push({ type: 'alert', text: `Food stress: ${snapshot.starving_regions.join(', ')}` });
   }
-  const hotRegion = [...snapshot.regions].sort((a, b) => b.credit_stress - a.credit_stress)[0];
-  if (hotRegion && hotRegion.credit_stress > 0.25) {
-    logs.push({
-      type: 'alert',
-      text: `${hotRegion.name} bank stress ${formatPercent(hotRegion.credit_stress)}`,
-    });
+  const stressed = [...snapshot.regions].sort((a, b) => b.credit_stress - a.credit_stress)[0];
+  if (stressed && stressed.credit_stress > 0.25) {
+    logs.push({ type: 'alert', text: `${stressed.name} bank stress ${formatPercent(stressed.credit_stress)}` });
   }
-  const infra = [...snapshot.regions].sort(
-    (a, b) => a.infrastructure_reliability - b.infrastructure_reliability
-  )[0];
+  const infra = [...snapshot.regions].sort((a, b) => a.infrastructure_reliability - b.infrastructure_reliability)[0];
   if (infra) {
-    logs.push({
-      type: infra.infrastructure_reliability > 0.9 ? 'success' : 'info',
-      text: `${infra.name} infra reliability ${formatPercent(
-        infra.infrastructure_reliability
-      )}`,
-    });
+    logs.push({ type: 'info', text: `${infra.name} infra ${formatPercent(infra.infrastructure_reliability)}` });
   }
   if (!logs.length) {
     logs.push({ type: 'info', text: 'All subsystems nominal.' });
   }
-  logs.forEach((entry) => appendLog(entry.text, entry.type));
+  logs.forEach((entry) => appendLog(entry.text));
   state.lastLoggedTick = snapshot.tick;
 }
 
-function appendLog(text, type = 'info') {
+function appendLog(text) {
   const placeholder = selectors.logTerminal.querySelector('.placeholder');
-  if (placeholder) {
-    placeholder.remove();
-  }
+  if (placeholder) placeholder.remove();
   const line = document.createElement('div');
-  line.className = `log-line ${type}`;
+  line.className = 'log-line';
   line.innerHTML = '<span class="content"></span><span class="cursor">▋</span>';
   selectors.logTerminal.appendChild(line);
   while (selectors.logTerminal.children.length > 8) {
@@ -302,140 +516,17 @@ function typeText(target, text, cursor, index = 0) {
   if (!target) return;
   if (index <= text.length) {
     target.textContent = text.slice(0, index);
-    setTimeout(() => typeText(target, text, cursor, index + 1), 12 + Math.random() * 30);
+    setTimeout(() => typeText(target, text, cursor, index + 1), 14 + Math.random() * 24);
   } else if (cursor) {
     cursor.remove();
     target.textContent = text;
   }
 }
 
-function setupCityLayout() {
-  const width = cityCanvas.width;
-  const height = cityCanvas.height;
-  for (let row = 0; row < 5; row += 1) {
-    for (let col = 0; col < 10; col += 1) {
-      state.houses.push({
-        x: 80 + col * 80 + Math.random() * 12,
-        y: 80 + row * 70 + Math.random() * 8,
-        size: 18 + Math.random() * 10,
-        phase: Math.random() * Math.PI * 2,
-      });
-    }
-  }
-  for (let i = 0; i < 12; i += 1) {
-    state.cars.push({
-      t: Math.random(),
-      speed: 0.05 + Math.random() * 0.08,
-      color: Math.random() > 0.5 ? '#58ffe0' : '#ff8dd6',
-      lane: i % 3,
-    });
-  }
-  for (let i = 0; i < 4; i += 1) {
-    state.skyline.push({
-      x: 120 + i * 180,
-      width: 100 + Math.random() * 80,
-      height: 120 + Math.random() * 80,
-    });
-  }
-}
-
 function resizeCanvas() {
-  // Canvas scales via CSS for responsiveness; drawing uses normalized coordinates.
-}
-
-function drawCityScene(snapshot, aggregates) {
-  const ctx = cityCtx;
-  const width = cityCanvas.width;
-  const height = cityCanvas.height;
-  ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = '#010101';
-  ctx.fillRect(0, 0, width, height);
-  drawWater(ctx, width, height);
-  drawRoads(ctx, width, height);
-  drawSkyline(ctx, aggregates);
-  drawHouses(ctx, aggregates);
-  drawCars(ctx, width, height, aggregates);
-  drawIslandDetails(ctx, snapshot);
-}
-
-function drawWater(ctx, width, height) {
-  const gradient = ctx.createLinearGradient(0, height * 0.6, 0, height);
-  gradient.addColorStop(0, 'rgba(35, 80, 120, 0.7)');
-  gradient.addColorStop(1, 'rgba(10, 30, 50, 0.8)');
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, height * 0.65, width, height * 0.35);
-}
-
-function drawRoads(ctx, width, height) {
-  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-  ctx.lineWidth = 6;
-  ctx.setLineDash([14, 16]);
-  for (let i = 0; i < 4; i += 1) {
-    const y = 120 + i * 90;
-    ctx.beginPath();
-    ctx.moveTo(60, y);
-    ctx.lineTo(width - 60, y);
-    ctx.stroke();
-  }
-  ctx.setLineDash([]);
-}
-
-function drawSkyline(ctx, aggregates) {
-  ctx.save();
-  ctx.globalAlpha = 0.7;
-  state.skyline.forEach((tower) => {
-    ctx.fillStyle = 'rgba(255,255,255,0.08)';
-    ctx.fillRect(tower.x, 320 - tower.height, tower.width, tower.height);
-    const windows = Math.floor(tower.width / 14);
-    for (let i = 0; i < windows; i += 1) {
-      ctx.fillStyle = Math.random() > aggregates.shortage ? '#ffe066' : '#424242';
-      ctx.fillRect(tower.x + i * 14 + 5, 320 - tower.height + 10, 6, tower.height - 20);
-    }
-  });
-  ctx.restore();
-}
-
-function drawHouses(ctx, aggregates) {
-  state.houses.forEach((house, index) => {
-    const pulse = 0.4 + 0.4 * Math.sin(house.phase + Date.now() * 0.001 + index);
-    const shortageFactor = 1 - aggregates.shortage;
-    ctx.fillStyle = `rgba(88, 255, 224, ${0.35 + pulse * shortageFactor})`;
-    ctx.fillRect(house.x, house.y, house.size, house.size * 0.6);
-    ctx.fillStyle = `rgba(255, 255, 255, ${0.4 + pulse * 0.3})`;
-    ctx.fillRect(house.x + house.size * 0.3, house.y - house.size * 0.4, house.size * 0.4, house.size * 0.4);
-  });
-}
-
-function animateCity(delta) {
-  state.cars.forEach((car) => {
-    car.t = (car.t + (delta / 1000) * car.speed) % 1;
-  });
-}
-
-function drawCars(ctx, width, height, aggregates) {
-  ctx.save();
-  ctx.shadowColor = '#28f7ff';
-  ctx.shadowBlur = 12;
-  state.cars.forEach((car) => {
-    const pathLength = width - 140;
-    const x = 70 + pathLength * car.t;
-    const laneOffset = car.lane * 8;
-    const y = 120 + laneOffset + Math.sin(car.t * Math.PI * 2) * 4;
-    ctx.fillStyle = car.color;
-    ctx.beginPath();
-    ctx.arc(x, y, 4 + aggregates.employment * 2, 0, Math.PI * 2);
-    ctx.fill();
-  });
-  ctx.restore();
-}
-
-function drawIslandDetails(ctx, snapshot) {
-  ctx.save();
-  ctx.font = '12px "IBM Plex Mono", monospace';
-  ctx.fillStyle = 'rgba(255,255,255,0.5)';
-  ctx.fillText(`Tick ${snapshot.tick}`, 20, 26);
-  ctx.fillText(`Regions ${snapshot.regions.length}`, 20, 44);
-  ctx.restore();
+  const containerWidth = cityCanvas.parentElement.clientWidth;
+  const aspect = (cityState.rows * cityState.tileSize) / (cityState.cols * cityState.tileSize);
+  cityCanvas.style.height = `${containerWidth * aspect}px`;
 }
 
 function updateStatus(stateKey) {
@@ -451,10 +542,6 @@ function updateStatus(stateKey) {
   selectors.statusLabel.textContent = map[stateKey] || 'Observing';
 }
 
-function setStatus(key) {
-  updateStatus(key);
-}
-
 function formatNumber(value) {
   return (value || 0).toLocaleString('en-US');
 }
@@ -467,7 +554,7 @@ function formatShortNumber(value) {
 }
 
 function formatPercent(value) {
-  return `${(Math.min(1, Math.max(0, value || 0)) * 100).toFixed(1)}%`;
+  return `${(clamp(value, 0, 1) * 100).toFixed(1)}%`;
 }
 
 function formatCurrency(value) {
@@ -476,4 +563,8 @@ function formatCurrency(value) {
     currency: 'USD',
     maximumFractionDigits: 0,
   }).format(value || 0);
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
 }

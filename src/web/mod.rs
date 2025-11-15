@@ -12,8 +12,10 @@ use std::{
 };
 
 use anyhow::Result;
+use axum::body::Body;
+use axum::http::StatusCode;
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::header,
     response::{
         sse::{Event, KeepAlive, Sse},
@@ -22,6 +24,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use bytes::Bytes;
 use serde::Serialize;
 use tokio::{net::TcpListener, sync::broadcast};
 use tokio_stream::{wrappers::BroadcastStream, Stream, StreamExt};
@@ -187,6 +190,7 @@ pub async fn run(config: WebServerConfig) -> Result<()> {
         .route("/styles.css", get(styles))
         .route("/app.js", get(script))
         .route("/api/state", get(latest_state))
+        .route("/sprites/:name", get(sprite))
         .route("/api/frames", get(all_frames))
         .route("/api/events", get(stream_events))
         .with_state(state);
@@ -232,6 +236,19 @@ async fn script() -> impl IntoResponse {
         )
         .body(assets::APP_JS.to_string())
         .unwrap()
+}
+
+async fn sprite(Path(name): Path<String>) -> Response {
+    match assets::sprite(&name) {
+        Some(bytes) => Response::builder()
+            .header(header::CONTENT_TYPE, "image/png")
+            .body(Body::from(Bytes::from_static(bytes)))
+            .unwrap(),
+        None => Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::from(Bytes::from_static(b"")))
+            .unwrap(),
+    }
 }
 
 async fn latest_state(State(state): State<Arc<AppState>>) -> Json<StateEnvelope> {
