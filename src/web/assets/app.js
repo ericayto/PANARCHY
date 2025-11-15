@@ -19,30 +19,37 @@ const selectors = {
   speedDown: document.getElementById('speed-down'),
 };
 
+const CANVAS_WIDTH = 960;
+const CANVAS_HEIGHT = 540;
+const REGION_SLOTS = [
+  { x: 150, y: 200 },
+  { x: 270, y: 200 },
+  { x: 390, y: 200 },
+  { x: 510, y: 200 },
+  { x: 630, y: 200 },
+  { x: 750, y: 200 },
+  { x: 150, y: 310 },
+  { x: 270, y: 310 },
+  { x: 390, y: 310 },
+  { x: 510, y: 310 },
+  { x: 630, y: 310 },
+  { x: 750, y: 310 },
+  { x: 210, y: 420 },
+  { x: 330, y: 420 },
+  { x: 450, y: 420 },
+  { x: 570, y: 420 },
+  { x: 690, y: 420 },
+];
+
+const ROAD_BLUEPRINTS = [
+  { points: [ { x: 120, y: 360 }, { x: 840, y: 360 } ], lanes: 3 },
+  { points: [ { x: 200, y: 140 }, { x: 200, y: 500 } ], lanes: 2 },
+  { points: [ { x: 780, y: 120 }, { x: 780, y: 500 } ], lanes: 2 },
+  { points: [ { x: 120, y: 260 }, { x: 860, y: 260 } ], lanes: 2 },
+];
+
 const cityCanvas = document.getElementById('city-canvas');
 const cityCtx = cityCanvas.getContext('2d');
-
-const spriteSources = {
-  ground: '/sprites/terrain_grass.png',
-  soil: '/sprites/terrain_mud.png',
-  water: '/sprites/water.png',
-  road: '/sprites/road.png',
-  residential: '/sprites/residential.png',
-  commercial: '/sprites/commercial.png',
-  industrial: '/sprites/industrial.png',
-  park: '/sprites/park.png',
-};
-
-const cityState = {
-  tileSize: 48,
-  cols: 28,
-  rows: 18,
-  grid: [],
-  sprites: {},
-  ready: false,
-  cars: [],
-  loopLength: 1,
-};
 
 const state = {
   frames: [],
@@ -56,55 +63,31 @@ const state = {
     accumulator: 0,
     lastTimestamp: 0,
   },
-  lastLoggedTick: 0,
+  latestFrame: null,
+  metricTargets: { employment: 0, reliability: 0, stress: 0, shortage: 0, traffic: 0 },
+  metrics: { employment: 0, reliability: 0, stress: 0, shortage: 0, traffic: 0 },
+  regionLayout: new Map(),
+  regionVisuals: new Map(),
+  roads: ROAD_BLUEPRINTS.map(buildRoadGeometry),
+  cars: [],
+  logTick: 0,
 };
 
 let eventSource;
 
 init();
 
-async function init() {
-  await preloadSprites();
-  configureCanvas();
-  setupPlaybackControls();
-  await bootstrap();
+function init() {
+  setupControls();
+  setupCars();
+  bootstrap();
   startEventStream();
   window.addEventListener('resize', resizeCanvas);
   resizeCanvas();
   requestAnimationFrame(playbackLoop);
 }
 
-async function preloadSprites() {
-  const entries = Object.entries(spriteSources);
-  const resolved = await Promise.all(
-    entries.map(([key, src]) =>
-      loadImage(src).then((img) => [key, img])
-    )
-  );
-  resolved.forEach(([key, img]) => {
-    cityState.sprites[key] = img;
-  });
-  cityState.ready = true;
-}
-
-function loadImage(src) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.decoding = 'async';
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = src;
-  });
-}
-
-function configureCanvas() {
-  cityCanvas.width = cityState.cols * cityState.tileSize;
-  cityCanvas.height = cityState.rows * cityState.tileSize;
-  cityState.grid = createGrid('ground');
-  drawCityScene();
-}
-
-function setupPlaybackControls() {
+function setupControls() {
   selectors.playToggle.addEventListener('click', () => {
     state.playback.playing = !state.playback.playing;
     selectors.playToggle.textContent = state.playback.playing ? 'Pause' : 'Play';
@@ -113,11 +96,13 @@ function setupPlaybackControls() {
   selectors.speedUp.addEventListener('click', () => adjustSpeed(1));
   selectors.speedDown.addEventListener('click', () => adjustSpeed(-1));
   selectors.timelineSlider.addEventListener('input', (event) => {
-    const nextIndex = Number(event.target.value);
-    state.playback.index = nextIndex;
+    const idx = Number(event.target.value);
+    const frame = state.frames[idx];
+    if (!frame) return;
+    state.playback.index = idx;
     state.playback.playing = false;
     selectors.playToggle.textContent = 'Play';
-    renderFrame(state.frames[nextIndex]);
+    ingestFrame(frame);
   });
 }
 
@@ -138,24 +123,22 @@ async function bootstrap() {
     ]);
     if (stateResp.ok) {
       const info = await stateResp.json();
-      selectors.scenario.textContent = info.scenario || 'Unknown world';
       state.totalTicks = info.total_ticks || 0;
-      selectors.timelineSlider.max = state.totalTicks || 0;
-      selectors.timelineLabel.textContent = `Tick 0 / ${state.totalTicks}`;
+      selectors.scenario.textContent = info.scenario || 'Unknown world';
       updateStatus(info.completed ? 'complete' : 'warming');
     }
     if (framesResp.ok) {
       const payload = await framesResp.json();
       state.frames = payload.frames || [];
       state.totalTicks = payload.total_ticks || state.totalTicks;
-      selectors.timelineSlider.max = state.totalTicks;
       if (state.frames.length > 0) {
-        renderFrame(state.frames[state.frames.length - 1]);
+        state.playback.index = state.frames.length - 1;
+        ingestFrame(state.frames[state.playback.index]);
       }
+      updateTimelineBounds();
     }
   } catch (err) {
     console.error(err);
-    setTimeout(bootstrap, 3000);
   }
 }
 
@@ -166,11 +149,11 @@ function startEventStream() {
     try {
       const frame = JSON.parse(event.data);
       state.frames.push(frame);
+      updateTimelineBounds();
       if (state.playback.playing) {
         state.playback.index = state.frames.length - 1;
+        ingestFrame(frame);
       }
-      selectors.timelineSlider.max = Math.max(state.totalTicks, state.frames.length - 1);
-      renderFrame(frame);
     } catch (err) {
       console.error('Failed to parse frame', err);
     }
@@ -182,53 +165,41 @@ function startEventStream() {
   };
 }
 
-function playbackLoop(timestamp) {
-  if (!state.playback.lastTimestamp) {
-    state.playback.lastTimestamp = timestamp;
+function updateTimelineBounds() {
+  const maxIndex = Math.max(0, state.frames.length - 1);
+  selectors.timelineSlider.max = Math.max(state.totalTicks || 0, maxIndex);
+  selectors.timelineSlider.value = String(Math.min(state.playback.index, maxIndex));
+  if (state.latestFrame) {
+    selectors.timelineLabel.textContent = `Tick ${state.latestFrame.snapshot.tick} / ${state.totalTicks || state.latestFrame.snapshot.tick}`;
   }
-  const delta = timestamp - state.playback.lastTimestamp;
-  state.playback.lastTimestamp = timestamp;
-  animateCity(delta);
-  if (state.playback.playing && state.frames.length) {
-    state.playback.accumulator += delta * state.playback.speed;
-    while (state.playback.accumulator >= state.playback.baseInterval) {
-      advanceFrame();
-      state.playback.accumulator -= state.playback.baseInterval;
-    }
-  }
-  requestAnimationFrame(playbackLoop);
 }
 
-function advanceFrame() {
-  if (!state.frames.length) return;
-  const nextIndex = Math.min(state.frames.length - 1, state.playback.index + 1);
-  state.playback.index = nextIndex;
-  selectors.timelineSlider.value = String(nextIndex);
-  renderFrame(state.frames[nextIndex]);
-}
-
-function renderFrame(frame) {
+function ingestFrame(frame) {
   if (!frame || !frame.snapshot) return;
-  const snap = frame.snapshot;
-  selectors.tick.textContent = formatNumber(snap.tick);
-  selectors.days.textContent = snap.days_elapsed.toFixed(1);
-  selectors.population.textContent = formatNumber(snap.total_population);
-  selectors.starving.textContent = snap.starving_regions.length;
-  selectors.timelineLabel.textContent = `Tick ${snap.tick} / ${state.totalTicks || snap.tick}`;
-  selectors.timelineSlider.value = String(state.playback.index);
-  selectors.statusLabel.textContent = frame.completed ? 'Complete' : selectors.statusLabel.textContent;
+  state.latestFrame = frame;
+  updateStatus(frame.completed ? 'complete' : 'streaming');
+  const snapshot = frame.snapshot;
+  updateHud(snapshot);
+  updateRegionCards(snapshot.regions);
+  updateMetricTargets(snapshot);
+  updateRegionTargets(snapshot);
+  processLogs(snapshot);
+  selectors.timelineLabel.textContent = `Tick ${snapshot.tick} / ${state.totalTicks || snapshot.tick}`;
+}
 
-  const aggregates = aggregateMetrics(snap);
-  selectors.employment.textContent = formatPercent(aggregates.employment);
-  selectors.reliability.textContent = formatPercent(aggregates.reliability);
-  selectors.stress.textContent = formatPercent(aggregates.stress);
+function updateHud(snapshot) {
+  selectors.tick.textContent = formatNumber(snapshot.tick);
+  selectors.days.textContent = snapshot.days_elapsed.toFixed(1);
+  selectors.starving.textContent = snapshot.starving_regions.length;
+  selectors.population.textContent = formatNumber(snapshot.total_population);
+}
 
-  if (cityState.ready) {
-    rebuildCityTiles(snap);
-    drawCityScene();
-  }
-  updateRegions(snap.regions);
-  processLogs(snap);
+function updateMetricTargets(snapshot) {
+  const metrics = aggregateMetrics(snapshot);
+  selectors.employment.textContent = formatPercent(metrics.employment);
+  selectors.reliability.textContent = formatPercent(metrics.reliability);
+  selectors.stress.textContent = formatPercent(metrics.stress);
+  state.metricTargets = metrics;
 }
 
 function aggregateMetrics(snapshot) {
@@ -237,217 +208,72 @@ function aggregateMetrics(snapshot) {
       acc.employment += 1 - region.unemployment_rate;
       acc.reliability += region.infrastructure_reliability;
       acc.stress += region.credit_stress;
-      acc.shortage += region.food_shortage_ratio + region.energy_shortage_ratio;
+      acc.shortage += Math.max(region.food_shortage_ratio, region.energy_shortage_ratio);
+      acc.traffic += region.transport_utilization || 0;
       return acc;
     },
-    { employment: 0, reliability: 0, stress: 0, shortage: 0 }
+    { employment: 0, reliability: 0, stress: 0, shortage: 0, traffic: 0 }
   );
   const count = Math.max(snapshot.regions.length, 1);
   return {
     employment: totals.employment / count,
     reliability: totals.reliability / count,
     stress: totals.stress / count,
-    shortage: totals.shortage / (2 * count),
+    shortage: totals.shortage / count,
+    traffic: Math.min(1, totals.traffic / count || 0),
   };
 }
 
-function rebuildCityTiles(snapshot) {
-  const grid = createGrid('ground');
-  const rows = cityState.rows;
-  const cols = cityState.cols;
-  // waterway band
-  for (let r = 2; r < 5; r += 1) {
-    for (let c = 0; c < cols; c += 1) {
-      grid[r][c].sprite = 'water';
+function updateRegionTargets(snapshot) {
+  const regions = [...snapshot.regions].sort((a, b) => a.id - b.id);
+  const maxPop = Math.max(...regions.map((r) => r.citizens), 1);
+  regions.forEach((region, index) => {
+    if (!state.regionLayout.has(region.id)) {
+      state.regionLayout.set(region.id, index % REGION_SLOTS.length);
     }
-  }
-  // soil diagonal accent
-  for (let i = 0; i < Math.min(rows, cols); i += 1) {
-    const r = rows - 1 - i;
-    const c = i;
-    if (grid[r] && grid[r][c]) {
-      grid[r][c].sprite = 'soil';
-    }
-  }
-  const midRow = Math.floor(rows / 2);
-  const midCol = Math.floor(cols / 2);
-  for (let c = 0; c < cols; c += 1) {
-    grid[midRow][c].sprite = 'road';
-  }
-  for (let r = 0; r < rows; r += 1) {
-    grid[r][midCol].sprite = 'road';
-  }
-  const nodes = computeRegionNodes(snapshot.regions.length);
-  nodes.forEach((node) => carveCorridor(grid, node.x, node.y, midCol, midRow));
-  nodes.forEach((node, idx) => layDistrict(grid, node, snapshot.regions[idx]));
-  cityState.grid = grid;
-  if (!cityState.cars.length) {
-    initCars();
-  }
+    const slotIndex = state.regionLayout.get(region.id);
+    const visual = ensureRegionVisual(region.id, slotIndex);
+    const shortage = Math.max(region.food_shortage_ratio, region.energy_shortage_ratio);
+    const popRatio = region.citizens / maxPop;
+    visual.targetHeight = 26 + popRatio * 95;
+    visual.targetShortage = shortage;
+    visual.targetStress = region.credit_stress;
+    visual.targetGlow = 0.25 + region.infrastructure_reliability * 0.6;
+  });
 }
 
-function createGrid(fillSprite) {
-  return Array.from({ length: cityState.rows }, () =>
-    Array.from({ length: cityState.cols }, () => ({ sprite: fillSprite }))
-  );
-}
-
-function computeRegionNodes(count) {
-  if (!count) return [];
-  const nodes = [];
-  const radius = Math.min(cityState.cols, cityState.rows) * 0.35;
-  for (let i = 0; i < count; i += 1) {
-    const angle = (i / count) * Math.PI * 2;
-    const x = Math.round(cityState.cols / 2 + radius * Math.cos(angle));
-    const y = Math.round(cityState.rows / 2 + radius * Math.sin(angle));
-    nodes.push({
-      x: clamp(Math.min(cityState.cols - 4, x), 3, cityState.cols - 4),
-      y: clamp(Math.min(cityState.rows - 4, y), 3, cityState.rows - 4),
+function ensureRegionVisual(id, slotIndex) {
+  if (!state.regionVisuals.has(id)) {
+    state.regionVisuals.set(id, {
+      slotIndex,
+      height: 30,
+      targetHeight: 30,
+      shortage: 0,
+      targetShortage: 0,
+      stress: 0,
+      targetStress: 0,
+      glow: 0.3,
+      targetGlow: 0.3,
     });
   }
-  return nodes;
+  const visual = state.regionVisuals.get(id);
+  visual.slotIndex = slotIndex;
+  return visual;
 }
 
-function carveCorridor(grid, x, y, midCol, midRow) {
-  let cx = x;
-  let cy = y;
-  while (cx !== midCol) {
-    grid[cy][cx].sprite = 'road';
-    cx += cx < midCol ? 1 : -1;
-  }
-  while (cy !== midRow) {
-    grid[cy][cx].sprite = 'road';
-    cy += cy < midRow ? 1 : -1;
-  }
-}
-
-function layDistrict(grid, node, region) {
-  const palette = districtPalette(region);
-  let index = 0;
-  for (let dy = -1; dy <= 1; dy += 1) {
-    for (let dx = -1; dx <= 1; dx += 1) {
-      const sprite = palette[Math.min(palette.length - 1, index)];
-      setTile(grid, node.x + dx, node.y + dy, sprite);
-      index += 1;
-    }
-  }
-  for (let dx = -2; dx <= 2; dx += 1) {
-    setTile(grid, node.x + dx, node.y - 2, 'road');
-    setTile(grid, node.x + dx, node.y + 2, 'road');
-  }
-  for (let dy = -2; dy <= 2; dy += 1) {
-    setTile(grid, node.x - 2, node.y + dy, 'road');
-    setTile(grid, node.x + 2, node.y + dy, 'road');
-  }
-}
-
-function districtPalette(region) {
-  const palette = ['residential'];
-  if (region.household_budget > region.citizens * 1.2) {
-    palette.push('commercial');
-  }
-  if (region.energy_shortage_ratio > 0.12 || region.energy_curtailed > 500) {
-    palette.push('industrial');
-  }
-  if (region.policy_approval > 0.6 || region.budget_balance > 0) {
-    palette.push('park');
-  }
-  while (palette.length < 4) {
-    palette.push(palette[palette.length - 1] || 'residential');
-  }
-  return palette;
-}
-
-function setTile(grid, x, y, sprite) {
-  if (y < 0 || y >= cityState.rows) return;
-  if (x < 0 || x >= cityState.cols) return;
-  grid[y][x].sprite = sprite;
-}
-
-function drawCityScene() {
-  const ctx = cityCtx;
-  const width = cityCanvas.width;
-  const height = cityCanvas.height;
-  const tileSize = cityState.tileSize;
-  ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = '#050505';
-  ctx.fillRect(0, 0, width, height);
-  for (let row = 0; row < cityState.rows; row += 1) {
-    for (let col = 0; col < cityState.cols; col += 1) {
-      const tile = cityState.grid[row][col];
-      const sprite = cityState.sprites[tile.sprite];
-      if (sprite) {
-        ctx.drawImage(sprite, col * tileSize, row * tileSize, tileSize, tileSize);
-      }
-    }
-  }
-  drawCars(ctx);
-}
-
-function initCars() {
-  const width = cityState.cols * cityState.tileSize;
-  const height = cityState.rows * cityState.tileSize;
-  cityState.loopLength = 2 * (width + height);
-  cityState.cars = Array.from({ length: 24 }, () => ({
-    progress: Math.random(),
-    speed: 0.02 + Math.random() * 0.05,
-  }));
-}
-
-function animateCity(delta) {
-  if (!cityState.cars.length) return;
-  cityState.cars.forEach((car) => {
-    car.progress = (car.progress + (delta / 1000) * car.speed) % 1;
-  });
-}
-
-function drawCars(ctx) {
-  if (!cityState.cars.length) return;
-  ctx.save();
-  ctx.fillStyle = 'rgba(255,255,255,0.9)';
-  cityState.cars.forEach((car) => {
-    const pos = positionAlongLoop(car.progress);
-    ctx.fillRect(pos.x, pos.y, 6, 6);
-  });
-  ctx.restore();
-}
-
-function positionAlongLoop(progress) {
-  const width = cityState.cols * cityState.tileSize;
-  const height = cityState.rows * cityState.tileSize;
-  const perimeter = 2 * (width + height);
-  let distance = progress * perimeter;
-  if (distance < width) {
-    return { x: distance, y: Math.max(4, height / 2 - 8) };
-  }
-  distance -= width;
-  if (distance < height) {
-    return { x: width / 2 + 8, y: distance };
-  }
-  distance -= height;
-  if (distance < width) {
-    return { x: width - distance, y: height / 2 + 8 };
-  }
-  distance -= width;
-  return { x: width / 2 - 8, y: height - distance };
-}
-
-function updateRegions(regions) {
-  if (!regions) return;
-  const sorted = [...regions].sort((a, b) => a.id - b.id);
+function updateRegionCards(regions) {
   selectors.regionsGrid.innerHTML = '';
+  const sorted = [...regions].sort((a, b) => a.id - b.id);
   sorted.forEach((region) => {
     const card = document.createElement('div');
     card.className = 'region-card';
     const header = document.createElement('div');
     header.className = 'region-header';
     const title = document.createElement('div');
-    title.innerHTML = `<strong>${region.name}</strong><br><span class="muted">${formatShortNumber(
-      region.citizens
-    )} citizens</span>`;
+    title.innerHTML = `<strong>${region.name}</strong><br><span class="muted">${formatShortNumber(region.citizens)} citizens</span>`;
     const chip = document.createElement('div');
     chip.className = 'region-chip';
-    const alerting = region.food_shortage_ratio > 0.1 || region.energy_shortage_ratio > 0.1;
+    const alerting = region.food_shortage_ratio > 0.12 || region.energy_shortage_ratio > 0.12;
     chip.dataset.state = alerting ? 'alert' : 'stable';
     chip.textContent = alerting ? 'Shortage' : 'Stable';
     header.append(title, chip);
@@ -457,8 +283,8 @@ function updateRegions(regions) {
     stats.append(
       createStat('Employment', formatPercent(1 - region.unemployment_rate)),
       createStat('Wage', formatCurrency(region.wage)),
-      createStat('Power Cap', `${formatShortNumber(region.power_capacity)} MW`),
-      createStat('Budget', formatCurrency(region.household_budget))
+      createStat('Transport', formatPercent(1 - (region.transport_shortfall || 0))),
+      createStat('Credit Stress', formatPercent(region.credit_stress))
     );
     card.append(header, stats);
     selectors.regionsGrid.appendChild(card);
@@ -479,7 +305,7 @@ function createStat(label, value) {
 }
 
 function processLogs(snapshot) {
-  if (snapshot.tick <= state.lastLoggedTick) return;
+  if (snapshot.tick <= state.logTick) return;
   const logs = [];
   if (snapshot.starving_regions.length) {
     logs.push({ type: 'alert', text: `Food stress: ${snapshot.starving_regions.join(', ')}` });
@@ -495,15 +321,15 @@ function processLogs(snapshot) {
   if (!logs.length) {
     logs.push({ type: 'info', text: 'All subsystems nominal.' });
   }
-  logs.forEach((entry) => appendLog(entry.text));
-  state.lastLoggedTick = snapshot.tick;
+  logs.forEach((line) => appendLog(line.text, line.type));
+  state.logTick = snapshot.tick;
 }
 
-function appendLog(text) {
+function appendLog(text, type = 'info') {
   const placeholder = selectors.logTerminal.querySelector('.placeholder');
   if (placeholder) placeholder.remove();
   const line = document.createElement('div');
-  line.className = 'log-line';
+  line.className = `log-line ${type}`;
   line.innerHTML = '<span class="content"></span><span class="cursor">▋</span>';
   selectors.logTerminal.appendChild(line);
   while (selectors.logTerminal.children.length > 8) {
@@ -516,17 +342,254 @@ function typeText(target, text, cursor, index = 0) {
   if (!target) return;
   if (index <= text.length) {
     target.textContent = text.slice(0, index);
-    setTimeout(() => typeText(target, text, cursor, index + 1), 14 + Math.random() * 24);
+    setTimeout(() => typeText(target, text, cursor, index + 1), 12 + Math.random() * 24);
   } else if (cursor) {
     cursor.remove();
     target.textContent = text;
   }
 }
 
+function setupCars() {
+  const totalCars = 28;
+  state.cars = Array.from({ length: totalCars }, (_, idx) => ({
+    roadIndex: idx % state.roads.length,
+    lane: idx % 3,
+    length: 26,
+    width: 12,
+    baseSpeed: 90 + Math.random() * 70,
+    color: Math.random() > 0.5 ? '#63ffe3' : '#ff8fa3',
+    t: Math.random(),
+    active: true,
+  }));
+}
+
+function playbackLoop(timestamp) {
+  if (!state.playback.lastTimestamp) state.playback.lastTimestamp = timestamp;
+  const delta = timestamp - state.playback.lastTimestamp;
+  state.playback.lastTimestamp = timestamp;
+
+  if (state.playback.playing && state.frames.length > 0) {
+    state.playback.accumulator += delta * state.playback.speed;
+    const maxIndex = state.frames.length - 1;
+    while (state.playback.accumulator >= state.playback.baseInterval) {
+      state.playback.accumulator -= state.playback.baseInterval;
+      if (state.playback.index < maxIndex) {
+        state.playback.index += 1;
+        ingestFrame(state.frames[state.playback.index]);
+        selectors.timelineSlider.value = String(state.playback.index);
+      }
+    }
+  }
+
+  animateScene(delta);
+  requestAnimationFrame(playbackLoop);
+}
+
+function animateScene(delta) {
+  smoothMetrics(delta);
+  smoothRegionVisuals(delta);
+  updateCars(delta);
+  drawCityScene();
+}
+
+function smoothMetrics(delta) {
+  const ease = 1 - Math.pow(0.0001, delta / 1000);
+  Object.keys(state.metrics).forEach((key) => {
+    const current = state.metrics[key] || 0;
+    const target = state.metricTargets[key] || 0;
+    state.metrics[key] = current + (target - current) * ease;
+  });
+}
+
+function smoothRegionVisuals(delta) {
+  const ease = 1 - Math.pow(0.0001, delta / 1200);
+  state.regionVisuals.forEach((visual) => {
+    visual.height += (visual.targetHeight - visual.height) * ease;
+    visual.shortage += (visual.targetShortage - visual.shortage) * ease;
+    visual.stress += (visual.targetStress - visual.stress) * ease;
+    visual.glow += (visual.targetGlow - visual.glow) * ease;
+  });
+}
+
+function updateCars(delta) {
+  const activity = clamp(
+    0.25 + state.metrics.employment * 0.6 + (1 - state.metrics.shortage) * 0.3,
+    0,
+    1.4
+  );
+  const activeCars = Math.max(6, Math.floor(activity * state.cars.length));
+  state.cars.forEach((car, idx) => {
+    const road = state.roads[car.roadIndex];
+    car.active = idx < activeCars;
+    if (!road || !car.active) return;
+    const speedScale = 0.6 + activity * 0.9;
+    car.t = (car.t + (delta / 1000) * car.baseSpeed * speedScale / road.length) % 1;
+  });
+}
+
+function drawCityScene() {
+  const ctx = cityCtx;
+  ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  drawBackdrop(ctx);
+  drawRoads(ctx);
+  drawBuildings(ctx);
+  drawCars(ctx);
+  drawOverlay(ctx);
+}
+
+function drawBackdrop(ctx) {
+  const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+  gradient.addColorStop(0, '#04050a');
+  gradient.addColorStop(0.55, '#05070e');
+  gradient.addColorStop(1, '#061329');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+  ctx.fillStyle = 'rgba(10, 95, 150, 0.55)';
+  ctx.beginPath();
+  ctx.moveTo(0, CANVAS_HEIGHT * 0.7);
+  ctx.quadraticCurveTo(CANVAS_WIDTH * 0.35, CANVAS_HEIGHT * 0.6, CANVAS_WIDTH, CANVAS_HEIGHT * 0.8);
+  ctx.lineTo(CANVAS_WIDTH, CANVAS_HEIGHT);
+  ctx.lineTo(0, CANVAS_HEIGHT);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawRoads(ctx) {
+  state.roads.forEach((road) => {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(30, 34, 42, 0.95)';
+    ctx.lineWidth = 28;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(road.points[0].x, road.points[0].y);
+    for (let i = 1; i < road.points.length; i += 1) {
+      ctx.lineTo(road.points[i].x, road.points[i].y);
+    }
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = 4;
+    ctx.setLineDash([14, 16]);
+    ctx.beginPath();
+    ctx.moveTo(road.points[0].x, road.points[0].y);
+    for (let i = 1; i < road.points.length; i += 1) {
+      ctx.lineTo(road.points[i].x, road.points[i].y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  });
+}
+
+function drawBuildings(ctx) {
+  state.regionVisuals.forEach((visual) => {
+    const slot = REGION_SLOTS[visual.slotIndex % REGION_SLOTS.length];
+    if (!slot) return;
+    ctx.save();
+    ctx.translate(slot.x, slot.y);
+    const width = 60;
+    const height = visual.height;
+    const shortage = visual.shortage || 0;
+    const stress = visual.stress || 0;
+    const baseColor = shortage > 0.2 ? '#ff6e8b' : '#63ffe3';
+    ctx.fillStyle = adjustAlpha(baseColor, 0.55 + visual.glow * 0.35);
+    ctx.fillRect(-width / 2, -height, width, height);
+    ctx.fillStyle = 'rgba(5, 6, 12, 0.65)';
+    ctx.fillRect(-width / 2 + 4, -14, width - 8, 14);
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    for (let i = -width / 2 + 8; i < width / 2 - 8; i += 14) {
+      ctx.fillRect(i, -height + 12, 8, height - 26);
+    }
+    if (stress > 0.25) {
+      ctx.strokeStyle = adjustAlpha('#ffb347', 0.3 + stress * 0.4);
+      ctx.lineWidth = 2;
+      ctx.strokeRect(-width / 2, -height, width, height);
+    }
+    ctx.restore();
+  });
+}
+
+function drawCars(ctx) {
+  state.cars.forEach((car) => {
+    if (!car.active) return;
+    const road = state.roads[car.roadIndex];
+    if (!road) return;
+    const pos = pointOnRoad(road, car.t);
+    const laneOffset = (car.lane - (road.lanes - 1) / 2) * 12;
+    const x = pos.x + pos.normal.x * laneOffset;
+    const y = pos.y + pos.normal.y * laneOffset;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(pos.angle);
+    ctx.fillStyle = car.color;
+    ctx.fillRect(-car.length / 2, -car.width / 2, car.length, car.width);
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.fillRect(-car.length / 2 + 4, -car.width / 2 + 2, 6, car.width - 4);
+    ctx.fillRect(car.length / 2 - 10, -car.width / 2 + 2, 6, car.width - 4);
+    ctx.restore();
+  });
+}
+
+function drawOverlay(ctx) {
+  ctx.save();
+  ctx.globalAlpha = 0.25;
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  for (let x = 0; x < CANVAS_WIDTH; x += 80) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, CANVAS_HEIGHT);
+    ctx.stroke();
+  }
+  for (let y = 0; y < CANVAS_HEIGHT; y += 80) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(CANVAS_WIDTH, y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function buildRoadGeometry(blueprint) {
+  const segments = [];
+  let length = 0;
+  for (let i = 0; i < blueprint.points.length - 1; i += 1) {
+    const start = blueprint.points[i];
+    const end = blueprint.points[i + 1];
+    const segLength = Math.hypot(end.x - start.x, end.y - start.y);
+    length += segLength;
+    segments.push({ start, end, length: segLength });
+  }
+  return { ...blueprint, segments, length };
+}
+
+function pointOnRoad(road, t) {
+  let target = t * road.length;
+  for (const segment of road.segments) {
+    if (target <= segment.length) {
+      const ratio = segment.length === 0 ? 0 : target / segment.length;
+      const x = segment.start.x + (segment.end.x - segment.start.x) * ratio;
+      const y = segment.start.y + (segment.end.y - segment.start.y) * ratio;
+      const angle = Math.atan2(segment.end.y - segment.start.y, segment.end.x - segment.start.x);
+      const normal = { x: -Math.sin(angle), y: Math.cos(angle) };
+      return { x, y, angle, normal };
+    }
+    target -= segment.length;
+  }
+  const last = road.segments[road.segments.length - 1];
+  const angle = Math.atan2(last.end.y - last.start.y, last.end.x - last.start.x);
+  return {
+    x: last.end.x,
+    y: last.end.y,
+    angle,
+    normal: { x: -Math.sin(angle), y: Math.cos(angle) },
+  };
+}
+
 function resizeCanvas() {
-  const containerWidth = cityCanvas.parentElement.clientWidth;
-  const aspect = (cityState.rows * cityState.tileSize) / (cityState.cols * cityState.tileSize);
-  cityCanvas.style.height = `${containerWidth * aspect}px`;
+  cityCanvas.width = CANVAS_WIDTH;
+  cityCanvas.height = CANVAS_HEIGHT;
+  cityCanvas.style.width = '100%';
+  cityCanvas.style.height = 'auto';
 }
 
 function updateStatus(stateKey) {
@@ -565,6 +628,25 @@ function formatCurrency(value) {
   }).format(value || 0);
 }
 
-function clamp(value, min, max) {
+function clamp(value, min = 0, max = 1) {
   return Math.max(min, Math.min(max, value));
+}
+
+function adjustAlpha(color, alpha) {
+  if (!color) return `rgba(255, 255, 255, ${alpha})`;
+  if (color.startsWith('#')) {
+    const hex = color.slice(1);
+    const normalized = hex.length === 3
+      ? hex.split('').map((c) => c + c).join('')
+      : hex.padStart(6, '0');
+    const value = parseInt(normalized, 16);
+    const r = (value >> 16) & 255;
+    const g = (value >> 8) & 255;
+    const b = value & 255;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  if (color.startsWith('rgb')) {
+    return color.replace('rgb', 'rgba').replace(')', `, ${alpha})`);
+  }
+  return color;
 }
