@@ -1,0 +1,45 @@
+name: tiny_island
+description: >
+  Baseline scenario for Phase 0 with a single-island polity of fifty
+  thousand residents spread across three regions.
+seed: 1337
+dt_days: 1.0
+ticks: 180
+snapshot_interval_ticks: 30
+regions:
+  - name: Harbor Town
+    citizens: 20000
+    employment_rate: 0.68
+    annual_birth_rate: 0.012
+    annual_death_rate: 0.009
+    food_consumption_per_capita: 1.8
+    resources:
+      food: 48000.0
+      energy: 21000.0
+    regen:
+      food_per_1000: 62.0
+      energy_per_1000: 28.0
+  - name: Highlands
+    citizens: 17500
+    employment_rate: 0.61
+    annual_birth_rate: 0.011
+    annual_death_rate: 0.008
+    food_consumption_per_capita: 1.7
+    resources:
+      food: 52000.0
+      energy: 12000.0
+    regen:
+      food_per_1000: 78.0
+      energy_per_1000: 16.0
+  - name: Research Atoll
+    citizens: 12500
+    employment_rate: 0.74
+    annual_birth_rate: 0.010
+    annual_death_rate: 0.007
+    food_consumption_per_capita: 1.6
+    resources:
+      food: 24000.0
+      energy: 32000.0
+    regen:
+      food_per_1000: 54.0
+      energy_per_1000: 45.0

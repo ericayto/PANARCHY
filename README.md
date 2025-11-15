@@ -4,6 +4,34 @@ Below is the consolidated, implementation-ready spec that merges the original de
 
 ---
 
+## 0. Current Implementation Status (Phase 0)
+
+Phase 0 runs as a Rust crate with a deterministic ECS core, tick scheduler, RNG streams, JSON snapshotting, and the `tiny_island` scenario. The CLI executes the Environment → Population → Bookkeeping loop and writes snapshots to `snapshots/<scenario>/`.
+
+### What was delivered
+
+1. **ECS + Scheduler** – Entities (regions) carry typed population and resource components that run through the ordered system pipeline (`src/systems/*`).
+2. **Deterministic RNG** – Each system consumes its own ChaCha8 stream (see `src/rng.rs`) so identical seeds reproduce runs exactly.
+3. **Scenario loader** – `scenarios/tiny_island.yaml` defines the 50k-person world, runtime defaults, and resource regeneration rates.
+4. **Snapshots** – `snapshots/SCENARIO/tick_XXXXXX.json` captures tick state in a simple Arrow/Parquet-ready JSON schema; the interval is configurable via CLI/YAML.
+5. **Tests** – `cargo test` exercises scenario parsing, deterministic ticks, and snapshot persistence.
+
+### Try it locally
+
+```bash
+cargo run -- --scenario scenarios/tiny_island.yaml --ticks 90
+```
+
+Snapshots land in `snapshots/tiny_island/`. Override the interval with `--snapshot-interval N` (use `0` to disable).
+
+Run the automated checks with:
+
+```bash
+cargo test
+```
+
+---
+
 ## 1. Vision & Principles
 
 **Vision:** Build a modular, AI-augmented world simulator that runs comfortably on a single MacBook while still modeling a rich, plausible world with emergent societies, economies, and technologies. It supports AI agents (local models or API-hosted ones) without sacrificing determinism, performance, or safety.
@@ -832,6 +860,8 @@ logging:
 ## 12. Phased Implementation Plan (Laptop Scope)
 
 ### Phase 0 – Core Engine & Tiny Scenario
+
+**Status:** ✅ Complete in the Rust crate (`src/`) with the `tiny_island` scenario and snapshotting CLI.
 
 * ECS, scheduler, RNG, snapshots.
 * `tiny_island` scenario with 50k people, posted-price markets disabled at first.
