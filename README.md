@@ -29,7 +29,7 @@ Phase 4 keeps the deterministic Rust ECS core and adds a modern, animated observ
 7. **Finance & Banking** – The new `FinanceSystem` tracks per-region deposits, loan balances, interest accrual, credit stress, defaults, and infrastructure investment flows that are sensitive to shortages and transport jams.
 8. **Energy Dispatch & Infrastructure** – `InfrastructureSystem` now degrades and upgrades power/transport capacity based on maintenance spend and investments, feeds back into the economy via dispatch limits, and reports reliability plus shortfall signals in both runtime metrics and JSON snapshots.
 9. **Technology & Policy** – `TechnologySystem` advances a small technology DAG via R&D budgets coming from the new `PolicySystem`, which also manages taxes, transfers, R&D allocations, public debt, and infrastructure investment priorities so labor/productivity respond to unemployment and fiscal balance signals.
-10. **Immersive Observatory UI** – `cargo run` now always serves a cinematic, monochrome control room with a Cytopia-inspired pixel city (tile sprites sourced from the Cytopia open project), moving vehicles, hover-rich region cards, terminal-style logs with typing effects, and a timeline scrubber + speed controls so you can replay every tick.
+10. **Immersive Observatory UI** – `cargo run` now always serves a cinematic, custom-rendered pixel city with animated roads, walkers, and vehicles that mirror the simulation’s state. The dashboard adds timeline + speed controls, hover-rich region cards, and a hacker-style terminal log so you can replay every tick minute-by-minute.
 
 ### Try it locally
 
@@ -38,6 +38,7 @@ cargo run -- --scenario scenarios/tiny_island.yaml --ticks 120
 ```
 
 Snapshots land in `snapshots/tiny_island/`. Override the interval with `--snapshot-interval N` (use `0` to disable). The immersive dashboard automatically binds to `http://127.0.0.1:8080`, renders the pixel city, and gives you timeline and speed controls as soon as ticks start streaming.
+Each simulation day explodes into 1,440 minute slices inside the UI, so you can pause, scrub, or accelerate minute-by-minute commutes, walkers, and infrastructure load without touching the Rust engine.
 
 Run the automated checks with:
 
