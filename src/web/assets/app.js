@@ -19,8 +19,21 @@ const selectors = {
   speedDown: document.getElementById('speed-down'),
 };
 
+const spriteSources = {
+  ground: '/sprites/terrain_grass.png',
+  gravel: '/sprites/terrain_gravel.png',
+  mud: '/sprites/terrain_mud.png',
+  road: '/sprites/road_european.png',
+  resA: '/sprites/residential_a.png',
+  resB: '/sprites/residential_b.png',
+  commercial: '/sprites/commercial_a.png',
+  industrial: '/sprites/industrial_a.png',
+  cars: '/sprites/cars.png',
+};
+
 const CANVAS_WIDTH = 960;
 const CANVAS_HEIGHT = 540;
+
 const REGION_SLOTS = [
   { x: 150, y: 200 },
   { x: 270, y: 200 },
@@ -34,17 +47,17 @@ const REGION_SLOTS = [
   { x: 510, y: 310 },
   { x: 630, y: 310 },
   { x: 750, y: 310 },
-  { x: 210, y: 420 },
-  { x: 330, y: 420 },
-  { x: 450, y: 420 },
-  { x: 570, y: 420 },
-  { x: 690, y: 420 },
+  { x: 220, y: 420 },
+  { x: 360, y: 420 },
+  { x: 500, y: 420 },
+  { x: 640, y: 420 },
+  { x: 780, y: 420 },
 ];
 
 const ROAD_BLUEPRINTS = [
-  { points: [ { x: 120, y: 360 }, { x: 840, y: 360 } ], lanes: 3 },
-  { points: [ { x: 200, y: 140 }, { x: 200, y: 500 } ], lanes: 2 },
-  { points: [ { x: 780, y: 120 }, { x: 780, y: 500 } ], lanes: 2 },
+  { points: [ { x: 90, y: 360 }, { x: 880, y: 360 } ], lanes: 3 },
+  { points: [ { x: 180, y: 150 }, { x: 180, y: 500 } ], lanes: 2 },
+  { points: [ { x: 780, y: 130 }, { x: 780, y: 500 } ], lanes: 2 },
   { points: [ { x: 120, y: 260 }, { x: 860, y: 260 } ], lanes: 2 },
 ];
 
@@ -71,20 +84,51 @@ const state = {
   roads: ROAD_BLUEPRINTS.map(buildRoadGeometry),
   cars: [],
   logTick: 0,
+  sprites: {},
+  assetsReady: false,
 };
 
 let eventSource;
 
-init();
+init().catch((err) => console.error(err));
 
-function init() {
+async function init() {
+  await preloadSprites();
+  state.assetsReady = true;
   setupControls();
   setupCars();
-  bootstrap();
+  await bootstrap();
   startEventStream();
   window.addEventListener('resize', resizeCanvas);
   resizeCanvas();
   requestAnimationFrame(playbackLoop);
+}
+
+async function preloadSprites() {
+  const entries = Object.entries(spriteSources);
+  const loaded = await Promise.all(
+    entries.map(([key, src]) =>
+      loadImage(src)
+        .then((img) => [key, img])
+        .catch((err) => {
+          console.error('Failed to load sprite', src, err);
+          return [key, null];
+        })
+    )
+  );
+  loaded.forEach(([key, img]) => {
+    if (img) state.sprites[key] = img;
+  });
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.decoding = 'async';
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
 }
 
 function setupControls() {
@@ -138,7 +182,7 @@ async function bootstrap() {
       updateTimelineBounds();
     }
   } catch (err) {
-    console.error(err);
+    console.error('bootstrap failed', err);
   }
 }
 
@@ -235,25 +279,35 @@ function updateRegionTargets(snapshot) {
     const visual = ensureRegionVisual(region.id, slotIndex);
     const shortage = Math.max(region.food_shortage_ratio, region.energy_shortage_ratio);
     const popRatio = region.citizens / maxPop;
-    visual.targetHeight = 26 + popRatio * 95;
+    visual.targetHeight = 30 + popRatio * 110;
     visual.targetShortage = shortage;
     visual.targetStress = region.credit_stress;
-    visual.targetGlow = 0.25 + region.infrastructure_reliability * 0.6;
+    visual.targetGlow = 0.25 + (region.infrastructure_reliability || 0) * 0.7;
+    visual.spriteKey = chooseSpriteKeyForRegion(region);
   });
+}
+
+function chooseSpriteKeyForRegion(region) {
+  const shortage = Math.max(region.food_shortage_ratio, region.energy_shortage_ratio);
+  if (shortage > 0.25) return 'resB';
+  if ((region.transport_utilization || 0) > 0.7) return 'commercial';
+  if (region.credit_stress > 0.35) return 'industrial';
+  return 'resA';
 }
 
 function ensureRegionVisual(id, slotIndex) {
   if (!state.regionVisuals.has(id)) {
     state.regionVisuals.set(id, {
       slotIndex,
-      height: 30,
-      targetHeight: 30,
+      height: 40,
+      targetHeight: 40,
       shortage: 0,
       targetShortage: 0,
       stress: 0,
       targetStress: 0,
-      glow: 0.3,
-      targetGlow: 0.3,
+      glow: 0.35,
+      targetGlow: 0.35,
+      spriteKey: 'resA',
     });
   }
   const visual = state.regionVisuals.get(id);
@@ -321,7 +375,7 @@ function processLogs(snapshot) {
   if (!logs.length) {
     logs.push({ type: 'info', text: 'All subsystems nominal.' });
   }
-  logs.forEach((line) => appendLog(line.text, line.type));
+  logs.forEach((entry) => appendLog(entry.text, entry.type));
   state.logTick = snapshot.tick;
 }
 
@@ -354,10 +408,11 @@ function setupCars() {
   state.cars = Array.from({ length: totalCars }, (_, idx) => ({
     roadIndex: idx % state.roads.length,
     lane: idx % 3,
-    length: 26,
-    width: 12,
-    baseSpeed: 90 + Math.random() * 70,
+    length: 28,
+    width: 14,
+    baseSpeed: 100 + Math.random() * 80,
     color: Math.random() > 0.5 ? '#63ffe3' : '#ff8fa3',
+    spriteFrame: Math.floor(Math.random() * 4),
     t: Math.random(),
     active: true,
   }));
@@ -413,16 +468,16 @@ function smoothRegionVisuals(delta) {
 
 function updateCars(delta) {
   const activity = clamp(
-    0.25 + state.metrics.employment * 0.6 + (1 - state.metrics.shortage) * 0.3,
-    0,
-    1.4
+    0.25 + state.metrics.employment * 0.75 + state.metrics.traffic * 0.6 - state.metrics.shortage * 0.5,
+    0.1,
+    1.5
   );
   const activeCars = Math.max(6, Math.floor(activity * state.cars.length));
   state.cars.forEach((car, idx) => {
     const road = state.roads[car.roadIndex];
     car.active = idx < activeCars;
     if (!road || !car.active) return;
-    const speedScale = 0.6 + activity * 0.9;
+    const speedScale = 0.55 + activity;
     car.t = (car.t + (delta / 1000) * car.baseSpeed * speedScale / road.length) % 1;
   });
 }
@@ -431,6 +486,7 @@ function drawCityScene() {
   const ctx = cityCtx;
   ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
   drawBackdrop(ctx);
+  if (!state.assetsReady) return;
   drawRoads(ctx);
   drawBuildings(ctx);
   drawCars(ctx);
@@ -438,29 +494,61 @@ function drawCityScene() {
 }
 
 function drawBackdrop(ctx) {
-  const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
-  gradient.addColorStop(0, '#04050a');
-  gradient.addColorStop(0.55, '#05070e');
-  gradient.addColorStop(1, '#061329');
-  ctx.fillStyle = gradient;
+  const skyGradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+  skyGradient.addColorStop(0, '#050816');
+  skyGradient.addColorStop(0.5, '#05070e');
+  skyGradient.addColorStop(1, '#041020');
+  ctx.fillStyle = skyGradient;
   ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-  ctx.fillStyle = 'rgba(10, 95, 150, 0.55)';
+  const waterGradient = ctx.createLinearGradient(0, CANVAS_HEIGHT * 0.55, 0, CANVAS_HEIGHT);
+  waterGradient.addColorStop(0, 'rgba(26, 78, 140, 0.8)');
+  waterGradient.addColorStop(1, 'rgba(7, 25, 48, 0.9)');
+  ctx.fillStyle = waterGradient;
+  ctx.fillRect(0, CANVAS_HEIGHT * 0.55, CANVAS_WIDTH, CANVAS_HEIGHT * 0.45);
+
+  if (!state.assetsReady) return;
+
+  ctx.save();
   ctx.beginPath();
-  ctx.moveTo(0, CANVAS_HEIGHT * 0.7);
-  ctx.quadraticCurveTo(CANVAS_WIDTH * 0.35, CANVAS_HEIGHT * 0.6, CANVAS_WIDTH, CANVAS_HEIGHT * 0.8);
-  ctx.lineTo(CANVAS_WIDTH, CANVAS_HEIGHT);
-  ctx.lineTo(0, CANVAS_HEIGHT);
+  ctx.moveTo(70, CANVAS_HEIGHT * 0.6);
+  ctx.bezierCurveTo(CANVAS_WIDTH * 0.2, CANVAS_HEIGHT * 0.32, CANVAS_WIDTH * 0.45, CANVAS_HEIGHT * 0.36, CANVAS_WIDTH * 0.78, CANVAS_HEIGHT * 0.45);
+  ctx.bezierCurveTo(CANVAS_WIDTH * 0.92, CANVAS_HEIGHT * 0.6, CANVAS_WIDTH * 0.82, CANVAS_HEIGHT * 0.82, CANVAS_WIDTH * 0.55, CANVAS_HEIGHT * 0.86);
+  ctx.bezierCurveTo(CANVAS_WIDTH * 0.28, CANVAS_HEIGHT * 0.87, CANVAS_WIDTH * 0.08, CANVAS_HEIGHT * 0.74, 70, CANVAS_HEIGHT * 0.6);
   ctx.closePath();
+  const landPattern = state.sprites.ground ? ctx.createPattern(state.sprites.ground, 'repeat') : '#0d552d';
+  ctx.fillStyle = landPattern;
   ctx.fill();
+  ctx.restore();
+
+  if (state.sprites.gravel) {
+    ctx.save();
+    ctx.globalAlpha = 0.25 + 0.4 * (1 - state.metrics.shortage);
+    ctx.beginPath();
+    ctx.ellipse(CANVAS_WIDTH * 0.35, CANVAS_HEIGHT * 0.63, 110, 38, 0.3, 0, Math.PI * 2);
+    ctx.fillStyle = ctx.createPattern(state.sprites.gravel, 'repeat');
+    ctx.fill();
+    ctx.restore();
+  }
+
+  if (state.sprites.mud) {
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.beginPath();
+    ctx.ellipse(CANVAS_WIDTH * 0.62, CANVAS_HEIGHT * 0.58, 80, 32, -0.4, 0, Math.PI * 2);
+    ctx.fillStyle = ctx.createPattern(state.sprites.mud, 'repeat');
+    ctx.fill();
+    ctx.restore();
+  }
 }
 
 function drawRoads(ctx) {
   state.roads.forEach((road) => {
     ctx.save();
-    ctx.strokeStyle = 'rgba(30, 34, 42, 0.95)';
-    ctx.lineWidth = 28;
     ctx.lineCap = 'round';
+    ctx.lineWidth = 28;
+    const pattern = state.sprites.road ? ctx.createPattern(state.sprites.road, 'repeat') : 'rgba(32, 34, 40, 0.95)';
+    ctx.strokeStyle = pattern || 'rgba(32, 34, 40, 0.95)';
     ctx.beginPath();
     ctx.moveTo(road.points[0].x, road.points[0].y);
     for (let i = 1; i < road.points.length; i += 1) {
@@ -468,7 +556,7 @@ function drawRoads(ctx) {
     }
     ctx.stroke();
 
-    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
     ctx.lineWidth = 4;
     ctx.setLineDash([14, 16]);
     ctx.beginPath();
@@ -487,23 +575,31 @@ function drawBuildings(ctx) {
     if (!slot) return;
     ctx.save();
     ctx.translate(slot.x, slot.y);
-    const width = 60;
-    const height = visual.height;
-    const shortage = visual.shortage || 0;
-    const stress = visual.stress || 0;
-    const baseColor = shortage > 0.2 ? '#ff6e8b' : '#63ffe3';
-    ctx.fillStyle = adjustAlpha(baseColor, 0.55 + visual.glow * 0.35);
-    ctx.fillRect(-width / 2, -height, width, height);
-    ctx.fillStyle = 'rgba(5, 6, 12, 0.65)';
-    ctx.fillRect(-width / 2 + 4, -14, width - 8, 14);
-    ctx.fillStyle = 'rgba(255,255,255,0.08)';
-    for (let i = -width / 2 + 8; i < width / 2 - 8; i += 14) {
-      ctx.fillRect(i, -height + 12, 8, height - 26);
+    const spriteKey = visual.spriteKey || 'resA';
+    const sprite = state.sprites[spriteKey];
+    if (sprite) {
+      const { width: spriteWidth, height: spriteHeight } = spriteDimensions(sprite);
+      const targetHeight = Math.max(visual.height, spriteHeight * 0.4);
+      const scale = targetHeight / spriteHeight;
+      const drawWidth = spriteWidth * scale;
+      const drawHeight = spriteHeight * scale;
+      ctx.drawImage(sprite, -drawWidth / 2, -drawHeight + 20, drawWidth, drawHeight);
+    } else {
+      const width = 60;
+      const height = visual.height;
+      ctx.fillStyle = adjustAlpha('#63ffe3', 0.45);
+      ctx.fillRect(-width / 2, -height, width, height);
     }
-    if (stress > 0.25) {
-      ctx.strokeStyle = adjustAlpha('#ffb347', 0.3 + stress * 0.4);
+    if (visual.shortage > 0.15) {
+      ctx.fillStyle = adjustAlpha('#ff6e8b', 0.15 + visual.shortage * 0.5);
+      ctx.fillRect(-40, -6, 80, 10);
+    }
+    if (visual.stress > 0.2) {
+      ctx.strokeStyle = adjustAlpha('#ffd66b', 0.15 + visual.stress * 0.4);
       ctx.lineWidth = 2;
-      ctx.strokeRect(-width / 2, -height, width, height);
+      ctx.beginPath();
+      ctx.ellipse(0, 12, 32, 12, 0, 0, Math.PI * 2);
+      ctx.stroke();
     }
     ctx.restore();
   });
@@ -514,6 +610,7 @@ function drawCars(ctx) {
     if (!car.active) return;
     const road = state.roads[car.roadIndex];
     if (!road) return;
+    const carSprite = state.sprites.cars;
     const pos = pointOnRoad(road, car.t);
     const laneOffset = (car.lane - (road.lanes - 1) / 2) * 12;
     const x = pos.x + pos.normal.x * laneOffset;
@@ -521,11 +618,28 @@ function drawCars(ctx) {
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(pos.angle);
-    ctx.fillStyle = car.color;
-    ctx.fillRect(-car.length / 2, -car.width / 2, car.length, car.width);
-    ctx.fillStyle = 'rgba(255,255,255,0.7)';
-    ctx.fillRect(-car.length / 2 + 4, -car.width / 2 + 2, 6, car.width - 4);
-    ctx.fillRect(car.length / 2 - 10, -car.width / 2 + 2, 6, car.width - 4);
+    if (carSprite) {
+      const spriteWidth = carSprite.naturalWidth || carSprite.width || 128;
+      const frameWidth = spriteWidth / 4;
+      const frameHeight = carSprite.naturalHeight || carSprite.height || 15;
+      const sx = car.spriteFrame * frameWidth;
+      const length = car.length * (0.9 + state.metrics.employment * 0.3);
+      const width = car.width * (0.8 + (1 - state.metrics.shortage) * 0.2);
+      ctx.drawImage(
+        carSprite,
+        sx,
+        0,
+        frameWidth,
+        frameHeight,
+        -length / 2,
+        -width / 2,
+        length,
+        width
+      );
+    } else {
+      ctx.fillStyle = car.color;
+      ctx.fillRect(-car.length / 2, -car.width / 2, car.length, car.width);
+    }
     ctx.restore();
   });
 }
@@ -533,7 +647,7 @@ function drawCars(ctx) {
 function drawOverlay(ctx) {
   ctx.save();
   ctx.globalAlpha = 0.25;
-  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
   for (let x = 0; x < CANVAS_WIDTH; x += 80) {
     ctx.beginPath();
     ctx.moveTo(x, 0);
@@ -559,7 +673,7 @@ function buildRoadGeometry(blueprint) {
     length += segLength;
     segments.push({ start, end, length: segLength });
   }
-  return { ...blueprint, segments, length };
+  return { ...blueprint, segments, length: Math.max(length, 1) };
 }
 
 function pointOnRoad(road, t) {
@@ -632,13 +746,18 @@ function clamp(value, min = 0, max = 1) {
   return Math.max(min, Math.min(max, value));
 }
 
+function spriteDimensions(sprite) {
+  return {
+    width: sprite ? sprite.naturalWidth || sprite.width || 64 : 64,
+    height: sprite ? sprite.naturalHeight || sprite.height || 64 : 64,
+  };
+}
+
 function adjustAlpha(color, alpha) {
-  if (!color) return `rgba(255, 255, 255, ${alpha})`;
+  if (!color) return `rgba(255,255,255,${alpha})`;
   if (color.startsWith('#')) {
     const hex = color.slice(1);
-    const normalized = hex.length === 3
-      ? hex.split('').map((c) => c + c).join('')
-      : hex.padStart(6, '0');
+    const normalized = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex.padStart(6, '0');
     const value = parseInt(normalized, 16);
     const r = (value >> 16) & 255;
     const g = (value >> 8) & 255;
