@@ -1,0 +1,15 @@
+name: tiny_island
+random_seed: 7
+spatial:
+  level: 7
+  width_tiles: 128
+  height_tiles: 64
+population:
+  persons: 50000
+  use_representative_households: true
+snapshot:
+  every_ticks: 30
+  compression: none
+logging:
+  level: info
+  kpi_interval_days: 30
