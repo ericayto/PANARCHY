@@ -132,7 +132,7 @@ pub struct BookkeepingState {
     pub starving_regions: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RegionSnapshot {
     pub id: u64,
     pub name: String,
@@ -165,7 +165,7 @@ pub struct RegionSnapshot {
     pub innovation_score: f64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorldSnapshot {
     pub scenario: String,
     pub tick: u64,

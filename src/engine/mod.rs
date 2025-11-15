@@ -5,7 +5,7 @@ use anyhow::Result;
 use crate::{
     rng::{RngManager, SystemRng},
     snapshot::SnapshotWriter,
-    world::World,
+    world::{World, WorldSnapshot},
 };
 
 pub struct EngineSettings {
@@ -59,6 +59,13 @@ pub struct Engine {
 
 impl Engine {
     pub fn run(&mut self, world: &mut World, ticks: u64) -> Result<()> {
+        self.run_with_hook(world, ticks, |_| {})
+    }
+
+    pub fn run_with_hook<F>(&mut self, world: &mut World, ticks: u64, mut hook: F) -> Result<()>
+    where
+        F: FnMut(WorldSnapshot),
+    {
         for _ in 0..ticks {
             let current_tick = world.tick();
             for system in &mut self.systems {
@@ -73,6 +80,8 @@ impl Engine {
             world.advance_time();
             self.snapshot_writer
                 .maybe_write(world, &self.settings.scenario_name)?;
+            let snapshot = world.snapshot(&self.settings.scenario_name);
+            hook(snapshot);
         }
         Ok(())
     }
@@ -84,7 +93,7 @@ pub struct SystemContext<'a> {
     pub scenario_name: &'a str,
 }
 
-pub trait System {
+pub trait System: Send {
     fn name(&self) -> &str;
     fn run(
         &mut self,

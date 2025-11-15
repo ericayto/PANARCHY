@@ -4,6 +4,7 @@ pub mod scenario;
 pub mod snapshot;
 pub mod systems;
 pub mod technology;
+pub mod web;
 pub mod world;
 
 pub use engine::{Engine, EngineBuilder, EngineSettings};

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PANARCHY Observatory</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="plasma" aria-hidden="true"></div>
+    <header class="app-header">
+      <div class="logo-lockup">
+        <span class="logo">PANARCHY</span>
+        <span class="tagline">Phase 4 • Live Systems Observatory</span>
+      </div>
+      <div class="status-pill" id="status-pill">Booting Simulation Core</div>
+    </header>
+
+    <main class="grid-layout">
+      <section class="panel meta-panel">
+        <div class="panel-title">Scenario</div>
+        <div class="scenario-name" data-scenario>loading…</div>
+        <div class="meta-grid">
+          <div class="meta-item">
+            <span class="label">Tick</span>
+            <span class="value" id="tick-counter">0</span>
+          </div>
+          <div class="meta-item">
+            <span class="label">Days</span>
+            <span class="value" id="day-counter">0</span>
+          </div>
+          <div class="meta-item">
+            <span class="label">Total Population</span>
+            <span class="value" id="population-counter">0</span>
+          </div>
+          <div class="meta-item">
+            <span class="label">Starving Regions</span>
+            <span class="value critical" id="starving-counter">0</span>
+          </div>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" id="progress-fill"></div>
+        </div>
+        <div class="meta-footnote">Streaming deterministically from the Rust core.</div>
+      </section>
+
+      <section class="panel orbit-panel">
+        <canvas id="halo-canvas" width="640" height="320" aria-hidden="true"></canvas>
+        <div class="orbit-overlay">
+          <div class="panel-title">Planetary Pulse</div>
+          <div class="kpi-grid">
+            <div class="kpi" id="kpi-employment">
+              <p class="label">Employment</p>
+              <p class="value">0%</p>
+              <p class="hint">aggregate workforce utilization</p>
+            </div>
+            <div class="kpi" id="kpi-reliability">
+              <p class="label">Infra Reliability</p>
+              <p class="value">0%</p>
+              <p class="hint">power + transport health</p>
+            </div>
+            <div class="kpi" id="kpi-innovation">
+              <p class="label">Innovation Pulse</p>
+              <p class="value">0</p>
+              <p class="hint">mean innovation score</p>
+            </div>
+            <div class="kpi" id="kpi-finance">
+              <p class="label">Credit Stress</p>
+              <p class="value">0%</p>
+              <p class="hint">avg. bank stress</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel events-panel">
+        <div class="panel-title">Live Signals</div>
+        <div id="event-feed" class="event-feed">
+          <p class="placeholder">Awaiting telemetry…</p>
+        </div>
+      </section>
+
+      <section class="panel regions-panel">
+        <div class="panel-title">Regions</div>
+        <div id="regions-grid" class="regions-grid"></div>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

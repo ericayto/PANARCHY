@@ -4,9 +4,9 @@ Below is the consolidated, implementation-ready spec that merges the original de
 
 ---
 
-## 0. Current Implementation Status (Phase 3)
+## 0. Current Implementation Status (Phase 4)
 
-Phase 3 now runs end-to-end as a Rust crate with deterministic ECS core, tick scheduler, RNG streams, JSON snapshotting, and the `tiny_island` scenario. The CLI executes the Environment → Infrastructure → Population → Economy → Finance → Policy → Technology → Bookkeeping loop, wiring in basic banking, loans, energy dispatch, transport constraints, and the new tech/policy stack before writing snapshots to `snapshots/<scenario>/`.
+Phase 4 keeps the deterministic Rust ECS core and adds a modern, animated observability UI. The CLI still executes the Environment → Infrastructure → Population → Economy → Finance → Policy → Technology → Bookkeeping loop with deterministic RNG streams, JSON snapshotting, banking/energy/policy systems, and now also streams every tick to a dark-themed web interface that renders KPIs, region chips, and pixel grids while the simulation runs.
 
 ### What was delivered
 
@@ -19,6 +19,7 @@ Phase 3 now runs end-to-end as a Rust crate with deterministic ECS core, tick sc
 7. **Finance & Banking** – The new `FinanceSystem` tracks per-region deposits, loan balances, interest accrual, credit stress, defaults, and infrastructure investment flows that are sensitive to shortages and transport jams.
 8. **Energy Dispatch & Infrastructure** – `InfrastructureSystem` now degrades and upgrades power/transport capacity based on maintenance spend and investments, feeds back into the economy via dispatch limits, and reports reliability plus shortfall signals in both runtime metrics and JSON snapshots.
 9. **Technology & Policy** – `TechnologySystem` advances a small technology DAG via R&D budgets coming from the new `PolicySystem`, which also manages taxes, transfers, R&D allocations, public debt, and infrastructure investment priorities so labor/productivity respond to unemployment and fiscal balance signals.
+10. **Interactive Observatory UI** – `cargo run -- --web` now serves a modern, dark-themed web front-end with live SSE streams, animated orbit canvas, KPI tiles, and per-region pixel grids that highlight employment, shortages, credit stress, and infrastructure health in real time.
 
 ### Try it locally
 
@@ -27,6 +28,16 @@ cargo run -- --scenario scenarios/tiny_island.yaml --ticks 90
 ```
 
 Snapshots land in `snapshots/tiny_island/`. Override the interval with `--snapshot-interval N` (use `0` to disable).
+
+### Interactive Observatory UI
+
+Launch the animated dashboard, SSE stream, and static asset server with:
+
+```bash
+cargo run -- --scenario scenarios/tiny_island.yaml --ticks 120 --web --web-port 8080
+```
+
+Then visit `http://localhost:8080` to watch aggregate KPIs, orbit animations, and region pixel maps update as the simulation runs. Flags such as `--snapshot-interval` and `--snapshot-dir` still apply.
 
 Run the automated checks with:
 
@@ -937,14 +948,22 @@ logging:
 
 **Status:** ✅ Complete. Each region now carries a policy module that taxes revenue, funds transfers, allocates R&D/public investment, and manages debt/approval feedbacks. Those budgets feed the `TechnologySystem`, which traverses the technology DAG and upgrades food/energy productivity as breakthroughs unlock.
 
-### Phase 4 – AI Agents (Local & Remote)
+### Phase 4 – Immersive Web Interface
+
+**Status:** ✅ Complete. The new Web UI streams every tick over SSE, renders an animated orbital canvas, live KPI tiles, alert feed, and per-region pixel matrices that visualize employment, shortages, and credit stress inside a modern dark theme.
+
+* `cargo run -- --web` boots the web server + simulation loop.
+* Live metrics, alerts, and pixel art update deterministically with each tick.
+* Designed for MacBook-friendly observability with zero extra tooling.
+
+### Phase 5 – AI Agents (Local & Remote)
 
 * Implement AI providers, safety gate, and logging.
 * First AI-controlled government using local model or API.
 
-### Phase 5 – Optional Modules & Tools
+### Phase 6 – Optional Modules & Tools
 
-* Health, conflict, diplomacy, advanced UI.
+* Health, conflict, diplomacy, advanced UI extensions.
 * Scenario editor, plugin system.
 
 ---
