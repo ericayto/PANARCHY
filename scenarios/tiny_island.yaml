@@ -46,6 +46,18 @@ regions:
       transport_capacity: 86000.0
       maintenance_cost: 15000.0
       degradation_rate: 0.0035
+    technology:
+      rnd_budget_per_capita: 10.0
+      research_efficiency: 1.1
+      starting_techs:
+        - adaptive_farming
+    policy:
+      tax_rate: 0.26
+      transfer_per_capita: 18.0
+      public_investment_fraction: 0.22
+      rnd_fraction: 0.18
+      target_unemployment_rate: 0.07
+      target_primary_balance: 0.0
   - name: Highlands
     citizens: 17500
     employment_rate: 0.61
@@ -85,6 +97,17 @@ regions:
       transport_capacity: 79000.0
       maintenance_cost: 13000.0
       degradation_rate: 0.003
+    technology:
+      rnd_budget_per_capita: 7.5
+      research_efficiency: 0.95
+      starting_techs: []
+    policy:
+      tax_rate: 0.23
+      transfer_per_capita: 14.0
+      public_investment_fraction: 0.16
+      rnd_fraction: 0.12
+      target_unemployment_rate: 0.08
+      target_primary_balance: -50000.0
   - name: Research Atoll
     citizens: 12500
     employment_rate: 0.74
@@ -124,3 +147,16 @@ regions:
       transport_capacity: 81000.0
       maintenance_cost: 14000.0
       degradation_rate: 0.0032
+    technology:
+      rnd_budget_per_capita: 11.5
+      research_efficiency: 1.2
+      starting_techs:
+        - adaptive_farming
+        - grid_storage
+    policy:
+      tax_rate: 0.28
+      transfer_per_capita: 22.0
+      public_investment_fraction: 0.25
+      rnd_fraction: 0.22
+      target_unemployment_rate: 0.06
+      target_primary_balance: 0.0

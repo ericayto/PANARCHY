@@ -7,8 +7,8 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 
 use crate::world::{
-    EconomyComponent, FinanceComponent, InfrastructureComponent, PopulationComponent,
-    RegionComponent, ResourceStock, World,
+    EconomyComponent, FinanceComponent, InfrastructureComponent, PolicyComponent,
+    PopulationComponent, RegionComponent, ResourceStock, TechnologyComponent, World,
 };
 
 fn default_dt_days() -> f64 {
@@ -139,6 +139,38 @@ fn default_infrastructure_degradation_rate() -> f64 {
     0.003
 }
 
+fn default_tax_rate() -> f64 {
+    0.24
+}
+
+fn default_public_investment_fraction() -> f64 {
+    0.18
+}
+
+fn default_rnd_fraction() -> f64 {
+    0.12
+}
+
+fn default_target_unemployment() -> f64 {
+    0.07
+}
+
+fn default_target_primary_balance() -> f64 {
+    0.0
+}
+
+fn default_rnd_budget_per_capita() -> f64 {
+    8.0
+}
+
+fn default_research_efficiency_param() -> f64 {
+    1.0
+}
+
+fn default_starting_techs() -> Vec<String> {
+    Vec::new()
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Scenario {
     pub name: String,
@@ -176,6 +208,10 @@ pub struct ScenarioRegion {
     pub finance: ScenarioFinance,
     #[serde(default)]
     pub infrastructure: ScenarioInfrastructure,
+    #[serde(default)]
+    pub technology: ScenarioTechnology,
+    #[serde(default)]
+    pub policy: ScenarioPolicy,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -303,6 +339,55 @@ impl Default for ScenarioInfrastructure {
     }
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct ScenarioTechnology {
+    #[serde(default = "default_rnd_budget_per_capita")]
+    pub rnd_budget_per_capita: f64,
+    #[serde(default = "default_research_efficiency_param")]
+    pub research_efficiency: f64,
+    #[serde(default = "default_starting_techs")]
+    pub starting_techs: Vec<String>,
+}
+
+impl Default for ScenarioTechnology {
+    fn default() -> Self {
+        Self {
+            rnd_budget_per_capita: default_rnd_budget_per_capita(),
+            research_efficiency: default_research_efficiency_param(),
+            starting_techs: default_starting_techs(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ScenarioPolicy {
+    #[serde(default = "default_tax_rate")]
+    pub tax_rate: f64,
+    #[serde(default)]
+    pub transfer_per_capita: Option<f64>,
+    #[serde(default = "default_public_investment_fraction")]
+    pub public_investment_fraction: f64,
+    #[serde(default = "default_rnd_fraction")]
+    pub rnd_fraction: f64,
+    #[serde(default = "default_target_unemployment")]
+    pub target_unemployment_rate: f64,
+    #[serde(default = "default_target_primary_balance")]
+    pub target_primary_balance: f64,
+}
+
+impl Default for ScenarioPolicy {
+    fn default() -> Self {
+        Self {
+            tax_rate: default_tax_rate(),
+            transfer_per_capita: None,
+            public_investment_fraction: default_public_investment_fraction(),
+            rnd_fraction: default_rnd_fraction(),
+            target_unemployment_rate: default_target_unemployment(),
+            target_primary_balance: default_target_primary_balance(),
+        }
+    }
+}
+
 pub struct ScenarioLoader {
     base_dir: PathBuf,
 }
@@ -331,6 +416,10 @@ impl Scenario {
             let employed = (region.citizens as f64 * region.employment_rate)
                 .round()
                 .clamp(0.0, region.citizens as f64) as u64;
+            let transfer_per_capita = region
+                .policy
+                .transfer_per_capita
+                .unwrap_or(region.economy.basic_income_per_capita);
             let population = PopulationComponent {
                 citizens: region.citizens,
                 employed,
@@ -345,15 +434,21 @@ impl Scenario {
                 food_regen_per_1000: region.regen.food_per_1000,
                 energy_regen_per_1000: region.regen.energy_per_1000,
             };
+            let (food_multiplier, energy_multiplier) =
+                crate::technology::aggregate_productivity_multipliers(
+                    &region.technology.starting_techs,
+                );
             let economy = EconomyComponent {
-                food_productivity_per_worker: region.economy.food_productivity_per_worker,
-                energy_productivity_per_worker: region.economy.energy_productivity_per_worker,
+                food_productivity_per_worker: region.economy.food_productivity_per_worker
+                    * food_multiplier,
+                energy_productivity_per_worker: region.economy.energy_productivity_per_worker
+                    * energy_multiplier,
                 wage: region.economy.wage_per_worker,
                 target_inventory_days: region.economy.target_inventory_days,
                 price_adjustment_rate: region.economy.price_adjustment_rate,
                 wage_adjustment_rate: region.economy.wage_adjustment_rate,
                 job_matching_efficiency: region.economy.job_matching_efficiency,
-                basic_income_per_capita: region.economy.basic_income_per_capita,
+                basic_income_per_capita: transfer_per_capita,
                 propensity_to_consume: region.economy.propensity_to_consume,
                 food_price: region.economy.food_price,
                 energy_price: region.economy.energy_price,
@@ -392,6 +487,31 @@ impl Scenario {
                 reliability: 1.0,
                 pending_investment: 0.0,
             };
+            let technology = TechnologyComponent {
+                base_food_productivity: region.economy.food_productivity_per_worker,
+                base_energy_productivity: region.economy.energy_productivity_per_worker,
+                unlocked: region.technology.starting_techs.clone(),
+                active_project: None,
+                research_efficiency: region.technology.research_efficiency,
+                baseline_rnd_budget_per_capita: region.technology.rnd_budget_per_capita,
+                current_allocation: 0.0,
+                innovation_score: 0.0,
+            };
+            let policy = PolicyComponent {
+                tax_rate: region.policy.tax_rate,
+                transfer_per_capita,
+                public_investment_fraction: region.policy.public_investment_fraction,
+                rnd_fraction: region.policy.rnd_fraction,
+                target_unemployment_rate: region.policy.target_unemployment_rate,
+                target_primary_balance: region.policy.target_primary_balance,
+                budget_balance: 0.0,
+                public_debt: 0.0,
+                approval_rating: 0.65,
+                last_tax_revenue: 0.0,
+                last_transfers: 0.0,
+                last_public_investment: 0.0,
+                last_rnd_allocation: 0.0,
+            };
             world.spawn_region(
                 region_component,
                 population,
@@ -399,6 +519,8 @@ impl Scenario {
                 stock,
                 finance,
                 infrastructure,
+                technology,
+                policy,
             );
         }
         world

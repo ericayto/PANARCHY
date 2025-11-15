@@ -8,7 +8,7 @@ use panarchy::{
     scenario::ScenarioLoader,
     systems::{
         BookkeepingSystem, EconomySystem, EnvironmentSystem, FinanceSystem, InfrastructureSystem,
-        PopulationSystem,
+        PolicySystem, PopulationSystem, TechnologySystem,
     },
 };
 
@@ -58,6 +58,8 @@ fn main() -> Result<()> {
         .with_system(PopulationSystem::new())
         .with_system(EconomySystem::new())
         .with_system(FinanceSystem::new())
+        .with_system(PolicySystem::new())
+        .with_system(TechnologySystem::new())
         .with_system(BookkeepingSystem::new())
         .build();
 

@@ -4,9 +4,9 @@ Below is the consolidated, implementation-ready spec that merges the original de
 
 ---
 
-## 0. Current Implementation Status (Phase 2)
+## 0. Current Implementation Status (Phase 3)
 
-Phase 2 now runs end-to-end as a Rust crate with deterministic ECS core, tick scheduler, RNG streams, JSON snapshotting, and the `tiny_island` scenario. The CLI executes the Environment → Infrastructure → Population → Economy → Finance → Bookkeeping loop, wiring in basic banking, loans, energy dispatch, and transport constraints before writing snapshots to `snapshots/<scenario>/`.
+Phase 3 now runs end-to-end as a Rust crate with deterministic ECS core, tick scheduler, RNG streams, JSON snapshotting, and the `tiny_island` scenario. The CLI executes the Environment → Infrastructure → Population → Economy → Finance → Policy → Technology → Bookkeeping loop, wiring in basic banking, loans, energy dispatch, transport constraints, and the new tech/policy stack before writing snapshots to `snapshots/<scenario>/`.
 
 ### What was delivered
 
@@ -15,9 +15,10 @@ Phase 2 now runs end-to-end as a Rust crate with deterministic ECS core, tick sc
 3. **Simple Economy** – A posted-price economy system allocates labor to food/energy production, adjusts wages when labor demand diverges, and adapts prices when inventories fall below targets or demand surges.
 4. **Scenario loader** – `scenarios/tiny_island.yaml` defines the 50k-person world, runtime defaults, resource regeneration rates, and now per-region economic parameters (productivity, wages, price tuning).
 5. **Snapshots** – `snapshots/SCENARIO/tick_XXXXXX.json` captures tick state in a simple Arrow/Parquet-ready JSON schema expanded with wage, price, budget, and unemployment metrics.
-6. **Tests** – `cargo test` exercises scenario parsing, deterministic ticks, snapshot persistence, and Phase 1 economic behaviors (labor demand sensitivity + posted-price reaction to shortages).
+6. **Tests** – `cargo test` exercises scenario parsing, deterministic ticks, snapshot persistence, Phase 1 economic behaviors (labor demand sensitivity + posted-price reaction to shortages), Phase 2 finance/infrastructure loops, and the new Phase 3 policy + technology behaviors.
 7. **Finance & Banking** – The new `FinanceSystem` tracks per-region deposits, loan balances, interest accrual, credit stress, defaults, and infrastructure investment flows that are sensitive to shortages and transport jams.
 8. **Energy Dispatch & Infrastructure** – `InfrastructureSystem` now degrades and upgrades power/transport capacity based on maintenance spend and investments, feeds back into the economy via dispatch limits, and reports reliability plus shortfall signals in both runtime metrics and JSON snapshots.
+9. **Technology & Policy** – `TechnologySystem` advances a small technology DAG via R&D budgets coming from the new `PolicySystem`, which also manages taxes, transfers, R&D allocations, public debt, and infrastructure investment priorities so labor/productivity respond to unemployment and fiscal balance signals.
 
 ### Try it locally
 
@@ -65,6 +66,19 @@ infrastructure:
   transport_capacity: 86000.0              # max daily goods delivered to households
   maintenance_cost: 15000.0                # burn per tick to keep assets running
   degradation_rate: 0.0035                 # structural wear per day
+
+technology:
+  rnd_budget_per_capita: 10.0              # guaranteed daily R&D outlay per citizen
+  research_efficiency: 1.1                 # multiplier on R&D progress
+  starting_techs: [adaptive_farming]       # optional unlocked tech IDs from the DAG
+
+policy:
+  tax_rate: 0.26                           # share of sales revenue collected as taxes
+  transfer_per_capita: 18.0                # unemployment safety-net per capita
+  public_investment_fraction: 0.22         # share of discretionary cash for infrastructure
+  rnd_fraction: 0.18                       # share of discretionary cash for R&D
+  target_unemployment_rate: 0.07           # heuristics adjust transfers/taxes toward this
+  target_primary_balance: 0.0              # desired primary balance for fiscal tweaks
 ```
 
 Defaults mirror the upgraded `tiny_island` scenario, so existing scenarios continue to parse even without specifying every new field.
@@ -921,7 +935,7 @@ logging:
 
 ### Phase 3 – Tech & Policy
 
-* Add technology DAG, R&D, and government policy module.
+**Status:** ✅ Complete. Each region now carries a policy module that taxes revenue, funds transfers, allocates R&D/public investment, and manages debt/approval feedbacks. Those budgets feed the `TechnologySystem`, which traverses the technology DAG and upgrades food/energy productivity as breakthroughs unlock.
 
 ### Phase 4 – AI Agents (Local & Remote)
 

@@ -55,6 +55,42 @@ pub struct EconomyComponent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResearchProject {
+    pub tech_id: String,
+    pub progress: f64,
+    pub difficulty: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TechnologyComponent {
+    pub base_food_productivity: f64,
+    pub base_energy_productivity: f64,
+    pub unlocked: Vec<String>,
+    pub active_project: Option<ResearchProject>,
+    pub research_efficiency: f64,
+    pub baseline_rnd_budget_per_capita: f64,
+    pub current_allocation: f64,
+    pub innovation_score: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PolicyComponent {
+    pub tax_rate: f64,
+    pub transfer_per_capita: f64,
+    pub public_investment_fraction: f64,
+    pub rnd_fraction: f64,
+    pub target_unemployment_rate: f64,
+    pub target_primary_balance: f64,
+    pub budget_balance: f64,
+    pub public_debt: f64,
+    pub approval_rating: f64,
+    pub last_tax_revenue: f64,
+    pub last_transfers: f64,
+    pub last_public_investment: f64,
+    pub last_rnd_allocation: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResourceStock {
     pub food: f64,
     pub energy: f64,
@@ -118,6 +154,15 @@ pub struct RegionSnapshot {
     pub power_capacity: f64,
     pub transport_capacity: f64,
     pub infrastructure_reliability: f64,
+    pub tax_rate: f64,
+    pub transfer_per_capita: f64,
+    pub public_debt: f64,
+    pub policy_approval: f64,
+    pub budget_balance: f64,
+    pub unlocked_techs: Vec<String>,
+    pub active_research: Option<String>,
+    pub rnd_allocation: f64,
+    pub innovation_score: f64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -141,6 +186,8 @@ pub struct World {
     pub(crate) resources: HashMap<EntityId, ResourceStock>,
     pub(crate) finances: HashMap<EntityId, FinanceComponent>,
     pub(crate) infrastructure: HashMap<EntityId, InfrastructureComponent>,
+    pub(crate) technology: HashMap<EntityId, TechnologyComponent>,
+    pub(crate) policies: HashMap<EntityId, PolicyComponent>,
     pub(crate) bookkeeping: BookkeepingState,
 }
 
@@ -157,6 +204,8 @@ impl World {
             resources: HashMap::new(),
             finances: HashMap::new(),
             infrastructure: HashMap::new(),
+            technology: HashMap::new(),
+            policies: HashMap::new(),
             bookkeeping: BookkeepingState::default(),
         }
     }
@@ -169,6 +218,8 @@ impl World {
         resources: ResourceStock,
         finance: FinanceComponent,
         infrastructure: InfrastructureComponent,
+        technology: TechnologyComponent,
+        policy: PolicyComponent,
     ) -> EntityId {
         let id = self.allocate();
         self.regions.insert(id, region);
@@ -177,6 +228,8 @@ impl World {
         self.resources.insert(id, resources);
         self.finances.insert(id, finance);
         self.infrastructure.insert(id, infrastructure);
+        self.technology.insert(id, technology);
+        self.policies.insert(id, policy);
         id
     }
 
@@ -212,11 +265,18 @@ impl World {
             let stock = self.resources.get(id).expect("resource component exists");
             let finance = self.finances.get(id);
             let infra = self.infrastructure.get(id);
+            let technology = self.technology.get(id);
+            let policy = self.policies.get(id);
             let unemployment_rate = if population.citizens > 0 {
                 1.0 - (population.employed as f64 / population.citizens as f64)
             } else {
                 0.0
             };
+            let unlocked = technology
+                .map(|tech| tech.unlocked.clone())
+                .unwrap_or_default();
+            let active_research =
+                technology.and_then(|tech| tech.active_project.as_ref().map(|p| p.tech_id.clone()));
             regions.push(RegionSnapshot {
                 id: id.raw(),
                 name: region.name.clone(),
@@ -238,6 +298,15 @@ impl World {
                 power_capacity: infra.map(|i| i.power_capacity).unwrap_or(0.0),
                 transport_capacity: infra.map(|i| i.transport_capacity).unwrap_or(0.0),
                 infrastructure_reliability: infra.map(|i| i.reliability).unwrap_or(0.0),
+                tax_rate: policy.map(|p| p.tax_rate).unwrap_or(0.0),
+                transfer_per_capita: policy.map(|p| p.transfer_per_capita).unwrap_or(0.0),
+                public_debt: policy.map(|p| p.public_debt).unwrap_or(0.0),
+                policy_approval: policy.map(|p| p.approval_rating).unwrap_or(0.0),
+                budget_balance: policy.map(|p| p.budget_balance).unwrap_or(0.0),
+                unlocked_techs: unlocked,
+                active_research,
+                rnd_allocation: technology.map(|t| t.current_allocation).unwrap_or(0.0),
+                innovation_score: technology.map(|t| t.innovation_score).unwrap_or(0.0),
             });
         }
         regions.sort_by_key(|r| r.id);
@@ -265,12 +334,20 @@ impl World {
         self.economies.get_mut(&id)
     }
 
+    pub fn region(&self, id: EntityId) -> Option<&RegionComponent> {
+        self.regions.get(&id)
+    }
+
     pub fn resources_mut(&mut self, id: EntityId) -> Option<&mut ResourceStock> {
         self.resources.get_mut(&id)
     }
 
     pub fn population(&self, id: EntityId) -> Option<&PopulationComponent> {
         self.populations.get(&id)
+    }
+
+    pub fn population_mut(&mut self, id: EntityId) -> Option<&mut PopulationComponent> {
+        self.populations.get_mut(&id)
     }
 
     pub fn finance(&self, id: EntityId) -> Option<&FinanceComponent> {
@@ -287,6 +364,22 @@ impl World {
 
     pub fn infrastructure_mut(&mut self, id: EntityId) -> Option<&mut InfrastructureComponent> {
         self.infrastructure.get_mut(&id)
+    }
+
+    pub fn technology(&self, id: EntityId) -> Option<&TechnologyComponent> {
+        self.technology.get(&id)
+    }
+
+    pub fn technology_mut(&mut self, id: EntityId) -> Option<&mut TechnologyComponent> {
+        self.technology.get_mut(&id)
+    }
+
+    pub fn policy(&self, id: EntityId) -> Option<&PolicyComponent> {
+        self.policies.get(&id)
+    }
+
+    pub fn policy_mut(&mut self, id: EntityId) -> Option<&mut PolicyComponent> {
+        self.policies.get_mut(&id)
     }
     fn allocate(&mut self) -> EntityId {
         let id = EntityId(self.next_entity);

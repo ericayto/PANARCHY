@@ -3,7 +3,7 @@ use panarchy::{
     scenario::ScenarioLoader,
     systems::{
         BookkeepingSystem, EconomySystem, EnvironmentSystem, FinanceSystem, InfrastructureSystem,
-        PopulationSystem,
+        PolicySystem, PopulationSystem, TechnologySystem,
     },
 };
 
@@ -28,6 +28,8 @@ fn build_engine(seed: u64) -> EngineBuilder {
         .with_system(PopulationSystem::new())
         .with_system(EconomySystem::new())
         .with_system(FinanceSystem::new())
+        .with_system(PolicySystem::new())
+        .with_system(TechnologySystem::new())
         .with_system(BookkeepingSystem::new())
 }
 
