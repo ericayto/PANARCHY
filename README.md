@@ -866,3 +866,28 @@ logging:
 ## 13. Summary
 
 This spec describes a laptop-optimized world simulator that remains ambitious but realistic to build solo on a MacBook. Complexity is controlled with presets, feature flags, and level-of-detail settings. AI is optional, pluggable, and strictly sandboxed. Core subsystems are designed to be modular so you can implement them one by one and still have a playable, evolving world at each stage.
+
+## 14. Phase 0 Implementation Status
+
+*Status: Completed.* The repository now ships a working Phase 0 build that includes:
+
+- A deterministic core engine with a simple scheduler and modular systems for environment, population, and bookkeeping.
+- A lightweight configuration parser that consumes the `scenarios/tiny_island.yaml` preset (50k residents).
+- Snapshot generation in JSON at configurable intervals.
+- Pure-Rust implementation with no external crate dependencies to ensure reproducibility on offline machines.
+
+### Running Phase 0
+
+````bash
+cargo run --release
+````
+
+This command loads `scenarios/tiny_island.yaml`, runs 30 ticks, and prints aggregate population metrics per tick while emitting snapshots under `snapshots/tiny_island/`.
+
+### Testing
+
+````bash
+cargo test
+````
+
+The test suite covers scenario parsing, deterministic engine behaviour, and snapshot creation.

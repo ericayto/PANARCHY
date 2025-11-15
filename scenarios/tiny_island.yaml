@@ -1,0 +1,26 @@
+name: tiny_island
+random_seed: 42
+ticks: 30
+tick_days: 1.0
+snapshot:
+  interval: 5
+  output_dir: snapshots
+world:
+  tiles:
+    - id: 0
+      name: "Island Capital"
+      temperature_c: 26.0
+      precipitation_mm: 1.4
+      fertility: 0.62
+    - id: 1
+      name: "Harbor Town"
+      temperature_c: 25.0
+      precipitation_mm: 1.1
+      fertility: 0.58
+  populations:
+    - tile_id: 0
+      count: 30000
+      mean_age_years: 34.0
+    - tile_id: 1
+      count: 20000
+      mean_age_years: 31.5
