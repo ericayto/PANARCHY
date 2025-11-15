@@ -3,84 +3,92 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>PANARCHY Observatory</title>
+    <title>PANARCHY Cityscope</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <div class="plasma" aria-hidden="true"></div>
-    <header class="app-header">
-      <div class="logo-lockup">
-        <span class="logo">PANARCHY</span>
-        <span class="tagline">Phase 4 • Live Systems Observatory</span>
+    <div class="grid-background" aria-hidden="true"></div>
+    <div class="orbital-glow" aria-hidden="true"></div>
+
+    <header class="masthead">
+      <div class="title-stack">
+        <p class="eyebrow">PANARCHY CITYSIM</p>
+        <h1>Immersive Control Room</h1>
+        <p class="subtitle">Scenario: <span data-scenario>Loading…</span></p>
       </div>
-      <div class="status-pill" id="status-pill">Booting Simulation Core</div>
+      <div class="status-display" id="status-pill" data-state="warming">
+        Booting Simulation Core
+      </div>
     </header>
 
-    <main class="grid-layout">
-      <section class="panel meta-panel">
-        <div class="panel-title">Scenario</div>
-        <div class="scenario-name" data-scenario>loading…</div>
-        <div class="meta-grid">
-          <div class="meta-item">
-            <span class="label">Tick</span>
-            <span class="value" id="tick-counter">0</span>
-          </div>
-          <div class="meta-item">
-            <span class="label">Days</span>
-            <span class="value" id="day-counter">0</span>
-          </div>
-          <div class="meta-item">
-            <span class="label">Total Population</span>
-            <span class="value" id="population-counter">0</span>
-          </div>
-          <div class="meta-item">
-            <span class="label">Starving Regions</span>
-            <span class="value critical" id="starving-counter">0</span>
-          </div>
-        </div>
-        <div class="progress-track">
-          <div class="progress-fill" id="progress-fill"></div>
-        </div>
-        <div class="meta-footnote">Streaming deterministically from the Rust core.</div>
-      </section>
+    <section class="control-panel panel">
+      <div class="playback-controls">
+        <button id="play-toggle" class="ghost-button">Pause</button>
+        <button id="speed-down" class="ghost-button" title="Slow Down">−</button>
+        <button id="speed-up" class="ghost-button" title="Speed Up">+</button>
+        <span class="speed-label">Speed <strong id="speed-label">1x</strong></span>
+      </div>
+      <div class="timeline-controls">
+        <input type="range" id="timeline-slider" min="0" max="0" value="0" />
+        <span class="timeline-label" id="timeline-label">Tick 0 / 0</span>
+      </div>
+    </section>
 
-      <section class="panel orbit-panel">
-        <canvas id="halo-canvas" width="640" height="320" aria-hidden="true"></canvas>
-        <div class="orbit-overlay">
-          <div class="panel-title">Planetary Pulse</div>
-          <div class="kpi-grid">
-            <div class="kpi" id="kpi-employment">
+    <main class="layout">
+      <section class="city-panel panel">
+        <canvas id="city-canvas" width="960" height="540" aria-label="Pixel city overview"></canvas>
+        <div class="city-overlay">
+          <div class="overlay-grid">
+            <div class="overlay-chip">
+              <p class="label">Population</p>
+              <p class="value" id="population-counter">0</p>
+            </div>
+            <div class="overlay-chip">
               <p class="label">Employment</p>
-              <p class="value">0%</p>
-              <p class="hint">aggregate workforce utilization</p>
+              <p class="value" id="employment-counter">0%</p>
             </div>
-            <div class="kpi" id="kpi-reliability">
+            <div class="overlay-chip">
               <p class="label">Infra Reliability</p>
-              <p class="value">0%</p>
-              <p class="hint">power + transport health</p>
+              <p class="value" id="reliability-counter">0%</p>
             </div>
-            <div class="kpi" id="kpi-innovation">
-              <p class="label">Innovation Pulse</p>
-              <p class="value">0</p>
-              <p class="hint">mean innovation score</p>
-            </div>
-            <div class="kpi" id="kpi-finance">
+            <div class="overlay-chip">
               <p class="label">Credit Stress</p>
-              <p class="value">0%</p>
-              <p class="hint">avg. bank stress</p>
+              <p class="value" id="stress-counter">0%</p>
             </div>
           </div>
         </div>
       </section>
 
-      <section class="panel events-panel">
-        <div class="panel-title">Live Signals</div>
-        <div id="event-feed" class="event-feed">
-          <p class="placeholder">Awaiting telemetry…</p>
+      <section class="terminal-panel panel">
+        <div class="panel-title">Telemetry Log</div>
+        <div id="log-terminal" class="log-terminal">
+          <p class="placeholder">Waiting for state vectors…</p>
         </div>
       </section>
 
-      <section class="panel regions-panel">
+      <section class="kpi-panel panel">
+        <div class="panel-title">Systems Snapshot</div>
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <p class="label">Tick</p>
+            <p class="value" id="tick-counter">0</p>
+          </div>
+          <div class="kpi-card">
+            <p class="label">Days</p>
+            <p class="value" id="day-counter">0</p>
+          </div>
+          <div class="kpi-card">
+            <p class="label">Starving Regions</p>
+            <p class="value critical" id="starving-counter">0</p>
+          </div>
+          <div class="kpi-card">
+            <p class="label">Status</p>
+            <p class="value" id="status-label">Warming</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="regions-panel panel">
         <div class="panel-title">Regions</div>
         <div id="regions-grid" class="regions-grid"></div>
       </section>

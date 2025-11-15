@@ -8,9 +8,9 @@ Below is the consolidated, implementation-ready spec that merges the original de
 
 1. **Install Rust** – grab the stable toolchain via https://rustup.rs/ if you haven’t already, then run `rustup update` so `cargo` is ready.
 2. **Clone & enter the repo** – `git clone https://github.com/ericayto/PANARCHY.git && cd PANARCHY` (or unzip whatever folder you already have).
-3. **Run the default simulation** – `cargo run -- --ticks 90` starts the `tiny_island` scenario and drops snapshots into `snapshots/tiny_island/`.
-4. **Launch the live UI (optional but fun)** – `cargo run -- --ticks 120 --web --web-port 8080` and then open `http://localhost:8080` in a browser to watch the neon dashboard update in real time.
-5. **Need help?** Delete the `--ticks` flag to use scenario defaults, or pass `--scenario your_scenario.yaml` to point at another config.
+3. **Run the immersive sim** – `cargo run -- --ticks 120` launches the engine, spins up the web dashboard on `http://127.0.0.1:8080`, and streams every tick into the UI. The CLI logs the URL so just open it in any browser.
+4. **Tweak knobs** – Use `--scenario custom.yaml`, `--snapshot-interval 10`, or `--web-port 3000` to override inputs. The web UI now plays back the entire run with timeline + speed controls, so no headless mode is required.
+5. **Need help?** Delete the extra flags to fall back to defaults, or run `cargo clean` if `cargo` complains about builds. That’s it—no Docker, no extra services.
 
 That’s it—no Docker, no extra services. If `cargo` complains, run `cargo clean` once and try again.
 
@@ -29,25 +29,15 @@ Phase 4 keeps the deterministic Rust ECS core and adds a modern, animated observ
 7. **Finance & Banking** – The new `FinanceSystem` tracks per-region deposits, loan balances, interest accrual, credit stress, defaults, and infrastructure investment flows that are sensitive to shortages and transport jams.
 8. **Energy Dispatch & Infrastructure** – `InfrastructureSystem` now degrades and upgrades power/transport capacity based on maintenance spend and investments, feeds back into the economy via dispatch limits, and reports reliability plus shortfall signals in both runtime metrics and JSON snapshots.
 9. **Technology & Policy** – `TechnologySystem` advances a small technology DAG via R&D budgets coming from the new `PolicySystem`, which also manages taxes, transfers, R&D allocations, public debt, and infrastructure investment priorities so labor/productivity respond to unemployment and fiscal balance signals.
-10. **Interactive Observatory UI** – `cargo run -- --web` now serves a modern, dark-themed web front-end with live SSE streams, animated orbit canvas, KPI tiles, and per-region pixel grids that highlight employment, shortages, credit stress, and infrastructure health in real time.
+10. **Immersive Observatory UI** – `cargo run` now always serves a cinematic, black-on-white dashboard with a pixel island cityscape, moving vehicles, hover-rich region cards, terminal-style logs with typing effects, and a timeline scrubber + speed controls so you can replay every tick.
 
 ### Try it locally
 
 ```bash
-cargo run -- --scenario scenarios/tiny_island.yaml --ticks 90
+cargo run -- --scenario scenarios/tiny_island.yaml --ticks 120
 ```
 
-Snapshots land in `snapshots/tiny_island/`. Override the interval with `--snapshot-interval N` (use `0` to disable).
-
-### Interactive Observatory UI
-
-Launch the animated dashboard, SSE stream, and static asset server with:
-
-```bash
-cargo run -- --scenario scenarios/tiny_island.yaml --ticks 120 --web --web-port 8080
-```
-
-Then visit `http://localhost:8080` to watch aggregate KPIs, orbit animations, and region pixel maps update as the simulation runs. Flags such as `--snapshot-interval` and `--snapshot-dir` still apply.
+Snapshots land in `snapshots/tiny_island/`. Override the interval with `--snapshot-interval N` (use `0` to disable). The immersive dashboard automatically binds to `http://127.0.0.1:8080`, renders the pixel city, and gives you timeline and speed controls as soon as ticks start streaming.
 
 Run the automated checks with:
 
@@ -960,11 +950,12 @@ logging:
 
 ### Phase 4 – Immersive Web Interface
 
-**Status:** ✅ Complete. The new Web UI streams every tick over SSE, renders an animated orbital canvas, live KPI tiles, alert feed, and per-region pixel matrices that visualize employment, shortages, and credit stress inside a modern dark theme.
+**Status:** ✅ Complete. The new dashboard always boots with the sim, rendering a neon pixel island/city with animated houses, moving cars, hover-rich KPIs, and a cinematic terminal log panel with typing effects. A timeline scrubber + speed controls let you replay or fast-forward every tick deterministically.
 
-* `cargo run -- --web` boots the web server + simulation loop.
-* Live metrics, alerts, and pixel art update deterministically with each tick.
-* Designed for MacBook-friendly observability with zero extra tooling.
+* `cargo run` boots the simulation + Axum server automatically.
+* Pixel city, cars, and icons visualize population, shortages, and stress in real time.
+* Timeline slider + ± speed buttons let you scrub, pause, and replay the full history.
+* Terminal logs type out subsystem alerts to keep the vibe hacker-friendly.
 
 ### Phase 5 – AI Agents (Local & Remote)
 

@@ -54,6 +54,7 @@ pub struct StateEnvelope {
 struct AppState {
     broadcaster: broadcast::Sender<String>,
     latest_frame: Arc<Mutex<Option<UiFrame>>>,
+    frames: Arc<Mutex<Vec<UiFrame>>>,
     total_ticks: u64,
     scenario_name: String,
     simulation_done: Arc<AtomicBool>,
@@ -98,11 +99,13 @@ pub async fn run(config: WebServerConfig) -> Result<()> {
         .with_system(BookkeepingSystem::new())
         .build();
 
-    let (tx, _) = broadcast::channel::<String>(256);
+    let (tx, _) = broadcast::channel::<String>(512);
     let latest_frame: Arc<Mutex<Option<UiFrame>>> = Arc::new(Mutex::new(None));
+    let frames: Arc<Mutex<Vec<UiFrame>>> = Arc::new(Mutex::new(Vec::new()));
     let simulation_done = Arc::new(AtomicBool::new(false));
 
     let latest_for_sim = latest_frame.clone();
+    let frames_for_sim = frames.clone();
     let done_for_sim = simulation_done.clone();
     let tx_for_sim = tx.clone();
     let ticks = ticks;
@@ -117,6 +120,10 @@ pub async fn run(config: WebServerConfig) -> Result<()> {
             {
                 let mut guard = latest_for_sim.lock().expect("latest frame lock poisoned");
                 *guard = Some(frame.clone());
+            }
+            {
+                let mut guard = frames_for_sim.lock().expect("frames lock poisoned");
+                guard.push(frame.clone());
             }
             if let Ok(payload) = serde_json::to_string(&frame) {
                 let _ = tx_for_sim.send(payload);
@@ -136,6 +143,14 @@ pub async fn run(config: WebServerConfig) -> Result<()> {
                 let mut guard = latest_for_sim.lock().expect("latest frame lock poisoned");
                 *guard = Some(frame.clone());
             }
+            {
+                let mut guard = frames_for_sim.lock().expect("frames lock poisoned");
+                if let Some(last) = guard.last_mut() {
+                    *last = frame.clone();
+                } else {
+                    guard.push(frame.clone());
+                }
+            }
             if let Ok(payload) = serde_json::to_string(&frame) {
                 let _ = tx_for_sim.send(payload);
             }
@@ -147,6 +162,7 @@ pub async fn run(config: WebServerConfig) -> Result<()> {
     let state = Arc::new(AppState {
         broadcaster: tx.clone(),
         latest_frame: latest_frame.clone(),
+        frames: frames.clone(),
         total_ticks: ticks,
         scenario_name: scenario_label.clone(),
         simulation_done: simulation_done.clone(),
@@ -171,6 +187,7 @@ pub async fn run(config: WebServerConfig) -> Result<()> {
         .route("/styles.css", get(styles))
         .route("/app.js", get(script))
         .route("/api/state", get(latest_state))
+        .route("/api/frames", get(all_frames))
         .route("/api/events", get(stream_events))
         .with_state(state);
 
@@ -228,6 +245,24 @@ async fn latest_state(State(state): State<Arc<AppState>>) -> Json<StateEnvelope>
         total_ticks: state.total_ticks,
         frame,
         completed: state.simulation_done.load(Ordering::SeqCst),
+    })
+}
+
+#[derive(Serialize)]
+struct FramesResponse {
+    scenario: String,
+    total_ticks: u64,
+    completed: bool,
+    frames: Vec<UiFrame>,
+}
+
+async fn all_frames(State(state): State<Arc<AppState>>) -> Json<FramesResponse> {
+    let frames = state.frames.lock().expect("frames lock poisoned").clone();
+    Json(FramesResponse {
+        scenario: state.scenario_name.clone(),
+        total_ticks: state.total_ticks,
+        completed: state.simulation_done.load(Ordering::SeqCst),
+        frames,
     })
 }
 
